@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>HTML → APK</title>
+  <style>
+    body { font-family: sans-serif; padding: 20px; background: #111; color: #eee; max-width: 600px; margin: auto; }
+    input, .drop-zone { width: 100%; margin-bottom: 15px; padding: 10px; background: #222; color: #eee; border: 1px solid #444; border-radius: 6px; box-sizing: border-box; }
+    .drop-zone { padding: 30px; text-align: center; cursor: pointer; border: 2px dashed #444; }
+    .drop-zone.dragover { background: #2a2a2a; border-color: #3a7; }
+    button { width: 100%; padding: 12px 22px; background: #3a7; color: #fff; border: 0; border-radius: 6px; cursor: pointer; font-size: 16px; }
+    button:disabled { background: #555; cursor: not-allowed; }
+    #status { margin-top: 14px; color: #9cf; white-space: pre-wrap; text-align: center; }
+    label { display: block; margin-bottom: 5px; font-weight: bold; font-size: 14px; }
+  </style>
+</head>
+<body>
+  <h2>HTML → APK</h2>
+
+  <label>App Name</label>
+  <input type="text" id="appName" value="MyApp" placeholder="e.g. My Cool Game">
+
+  <label>Package Name (must be unique)</label>
+  <input type="text" id="packageName" value="com.example.myapp">
+
+  <label>App Icon (.png)</label>
+  <input type="file" id="icon" accept=".png">
+
+  <label>Source Files (HTML, ZIP, or Folder)</label>
+  <div class="drop-zone" id="dropZone" onclick="document.getElementById('fileInput').click()">
+    <p>Click to select files, a ZIP, or a Folder</p>
+    <!-- Single input that accepts everything -->
+    <input type="file" id="fileInput" multiple style="display:none">
+    <p style="font-size:12px; color:#888;">(Or drag and drop them here)</p>
+  </div>
+  <div id="fileList" style="margin-bottom:15px; font-size:12px; color:#888;"></div>
+
+  <button id="go" onclick="build()">Build APK</button>
+  <div id="status"></div>
+
+<script>
+let selectedFiles = [];
+
+const fileInput = document.getElementById('fileInput');
+const dropZone = document.getElementById('dropZone');
+
+// Handle File / Folder Selection
+fileInput.addEventListener('change', function() {
+  selectedFiles = Array.from(this.files);
+  updateFileList();
+});
+
+// Handle Drag & Drop
+dropZone.addEventListener('dragover', (e) => { e.preventDefault(); dropZone.classList.add('dragover'); });
+dropZone.addEventListener('dragleave', () => { dropZone.classList.remove('dragover'); });
+dropZone.addEventListener('drop', (e) => {
+  e.preventDefault();
+  dropZone.classList.remove('dragover');
+  if (e.dataTransfer.files.length) {
+    selectedFiles = Array.from(e.dataTransfer.files);
+    updateFileList();
+  }
+});
+
+function updateFileList() {
+  const list = document.getElementById('fileList');
+  if (selectedFiles.length === 0) {
+    list.textContent = "";
+    return;
+  }
+  const names = selectedFiles.map(f => f.name).join(', ');
+  list.textContent = selectedFiles.length + " file(s) selected: " + (names.length > 50 ? names.substring(0, 50) + '...' : names);
+}
+
+async function build() {
+  const status = document.getElementById('status');
+  const btn = document.getElementById('go');
+  
+  if (selectedFiles.length === 0) {
+    status.textContent = 'Please select a file or folder first.';
+    return;
+  }
+
+  btn.disabled = true;
+  status.textContent = 'Uploading files...';
+
+  const formData = new FormData();
+  formData.append('appName', document.getElementById('appName').value);
+  formData.append('packageName', document.getElementById('packageName').value);
+  
+  const iconFile = document.getElementById('icon').files[0];
+  if (iconFile) {
+    formData.append('files', iconFile, 'icon.png'); // Rename icon for backend
+  }
+
+  selectedFiles.forEach(file => {
+    formData.append('files', file);
+  });
+
+  try {
+    const create = await fetch('/api/jobs', {
+      method: 'POST',
+      body: formData
+    });
+
+    const data = await create.json();
+    if (!create.ok) throw new Error(data.message || 'Failed to start');
+
+    status.textContent = 'Building APK (this can take a minute)...';
+    
+    while (true) {
+      const r = await fetch('/api/jobs/' + data.id);
+      const j = await r.json();
+
+      if (j.status === 'done') {
+        status.innerHTML = '<a href="' + j.apk_url + '" download style="color:#3a7; font-size:18px;">✅ Done! Click here to Download APK</a>';
+        break;
+      }
+      if (j.status === 'error') throw new Error(j.message);
+      await new Promise(r => setTimeout(r, 3000));
+    }
+  } catch (e) {
+    status.textContent = 'Error: ' + e.message;
+  } finally {
+    btn.disabled = false;
+  }
+}
+</script>
+</body>
+</html>
