@@ -1,0 +1,606 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#0b0d14">
+  <title>Forge Studio — Android App Builder</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet" crossorigin>
+  <style>
+    :root{color-scheme:dark;--bg:#0b0d14;--panel:#121621;--panel2:#171d2a;--line:rgba(185,198,225,.12);--muted:#8791a6;--text:#f4f6fb;--accent:#9b8cff;--accent2:#6cdbca;--danger:#ff7c91;--shadow:0 24px 70px rgba(0,0,0,.28)}
+    *{box-sizing:border-box}html{min-height:100%;background:var(--bg)}body{margin:0;min-height:100vh;color:var(--text);font-family:'DM Sans',sans-serif;background:radial-gradient(900px 520px at 85% -10%,rgba(121,105,255,.16),transparent 65%),radial-gradient(700px 420px at -10% 25%,rgba(73,203,187,.08),transparent 65%),var(--bg)}
+    button,input,textarea{font:inherit}button{cursor:pointer}button:disabled{opacity:.55;cursor:not-allowed}
+    .shell{width:min(1120px,calc(100% - 40px));margin:0 auto;padding:28px 0 56px}.topbar{display:flex;align-items:center;justify-content:space-between;margin-bottom:48px}.brand{display:flex;align-items:center;gap:13px}.brand-mark{width:42px;height:42px;border-radius:14px;display:grid;place-items:center;background:linear-gradient(140deg,#b5a8ff,#7767e9 65%,#4e9fbb);box-shadow:0 8px 28px rgba(129,112,255,.26);font:800 20px Manrope,sans-serif;color:#fff}.brand-name{font:800 16px Manrope,sans-serif;letter-spacing:.02em}.brand-sub{font-size:11px;color:var(--muted);margin-top:2px;letter-spacing:.12em;text-transform:uppercase}.top-pill{display:flex;align-items:center;gap:8px;border:1px solid var(--line);background:rgba(20,25,37,.72);padding:9px 13px;border-radius:999px;color:#b8c1d2;font-size:12px}.dot{width:7px;height:7px;background:#69d9b9;border-radius:50%;box-shadow:0 0 12px #69d9b9}
+    .hero{margin-bottom:28px}.eyebrow{font-size:11px;text-transform:uppercase;letter-spacing:.19em;color:#a99cff;font-weight:700;margin-bottom:12px}.hero h1{font:800 clamp(30px,5vw,48px)/1.08 Manrope,sans-serif;letter-spacing:-.045em;margin:0;max-width:700px}.hero h1 span{background:linear-gradient(100deg,#c3b9ff,#83ded0);-webkit-background-clip:text;background-clip:text;color:transparent}.hero p{color:var(--muted);font-size:14px;line-height:1.7;max-width:620px;margin:14px 0 0}
+    .workspace{display:grid;grid-template-columns:minmax(0,1.02fr) minmax(0,.98fr);gap:18px;align-items:start}.stack{display:grid;gap:18px}.card{background:linear-gradient(155deg,rgba(24,30,44,.96),rgba(16,20,30,.98));border:1px solid var(--line);border-radius:20px;padding:22px;box-shadow:var(--shadow);min-width:0}.card-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:19px}.card-title{font:700 15px Manrope,sans-serif;letter-spacing:-.01em}.card-desc{font-size:12px;color:var(--muted);margin-top:5px;line-height:1.5}.step{font-size:10px;letter-spacing:.12em;color:#a99cff;border:1px solid rgba(169,156,255,.22);background:rgba(145,125,255,.09);padding:6px 9px;border-radius:999px;white-space:nowrap}
+    label{display:block;color:#b9c2d3;font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;margin:0 0 8px}.field{margin-bottom:17px}.field:last-child{margin-bottom:0}input[type=text]{width:100%;height:46px;padding:0 14px;color:var(--text);background:#0d111b;border:1px solid rgba(170,185,215,.16);border-radius:11px;outline:none;transition:border .2s,box-shadow .2s}input[type=text]:focus{border-color:rgba(159,143,255,.7);box-shadow:0 0 0 3px rgba(159,143,255,.1)}.field-hint{font-size:11px;color:#737f95;margin-top:7px;line-height:1.5}.field-row{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+    .upload-btn,.secondary-btn,.icon-btn{border:1px solid rgba(170,185,215,.16);background:#1b2231;color:#e6eaf4;border-radius:10px;padding:11px 14px;font-size:12px;font-weight:700;transition:background .2s,border .2s,transform .2s}.upload-btn:hover,.secondary-btn:hover,.icon-btn:hover{background:#242d40;border-color:rgba(169,156,255,.4)}.upload-btn:active,.primary-btn:active{transform:translateY(1px)}.upload-btn{width:100%;display:flex;justify-content:center;align-items:center;gap:9px}.upload-btn .plus{font-size:18px;color:#b5aaff;line-height:10px}.hidden-input{display:none!important}
+    .icon-layout{display:grid;grid-template-columns:200px 1fr;gap:18px;align-items:center}.crop-wrap{width:200px;height:200px;margin:0 auto;border-radius:24px;border:1px solid rgba(186,198,225,.22);overflow:hidden;position:relative;touch-action:none;background-color:#151b28;background-image:linear-gradient(45deg,#252c3b 25%,transparent 25%),linear-gradient(-45deg,#252c3b 25%,transparent 25%),linear-gradient(45deg,transparent 75%,#252c3b 75%),linear-gradient(-45deg,transparent 75%,#252c3b 75%);background-size:18px 18px;background-position:0 0,0 9px,9px -9px,-9px 0}.crop-wrap.empty:after{content:'ICON PREVIEW';position:absolute;inset:0;display:grid;place-items:center;color:#778198;font-size:10px;letter-spacing:.16em;font-weight:700}.crop-wrap img{position:absolute;top:0;left:0;max-width:none;max-height:none;user-select:none;-webkit-user-drag:none;pointer-events:none;transform-origin:center center;display:none}.crop-controls{display:grid;gap:12px}.control{display:grid;grid-template-columns:1fr auto;gap:8px;align-items:center}.control label{grid-column:1/-1;margin:0}.control output{font-size:11px;color:#aeb7ca;min-width:42px;text-align:right;font-variant-numeric:tabular-nums}.control input{width:100%;accent-color:#a99cff}.control-actions{display:flex;gap:8px}.control-actions button{flex:1}.remove-btn{width:100%;border:1px solid rgba(166,143,255,.26);background:linear-gradient(110deg,rgba(131,109,239,.2),rgba(88,176,174,.12));color:#d9d2ff;border-radius:10px;padding:11px;font-size:12px;font-weight:700}.remove-btn:hover{border-color:rgba(166,143,255,.6)}.remove-btn:disabled{opacity:.5}.progress-copy{min-height:16px;color:#a9b5ca;font-size:10px;line-height:1.5}.icon-foot{font-size:10px;color:#778198;line-height:1.55;margin-top:13px}
+    .drop-zone{border:1px dashed rgba(169,156,255,.38);background:linear-gradient(135deg,rgba(128,109,238,.08),rgba(69,174,166,.045));border-radius:15px;padding:25px 16px;text-align:center;transition:.2s}.drop-zone.dragover{border-color:#9f91ff;background:rgba(145,125,255,.13);transform:scale(1.005)}.drop-icon{width:42px;height:42px;margin:0 auto 12px;border-radius:13px;display:grid;place-items:center;background:rgba(160,145,255,.12);color:#b9adff;font-size:20px}.drop-title{font:700 13px Manrope,sans-serif}.drop-sub{font-size:11px;color:var(--muted);margin:6px 0 13px}.drop-actions{display:flex;justify-content:center;gap:8px;flex-wrap:wrap}.drop-actions .upload-btn{width:auto;min-width:132px}.file-list{display:grid;gap:7px;margin-top:14px;max-height:184px;overflow:auto}.file-item{display:flex;align-items:center;gap:10px;padding:10px 11px;border:1px solid rgba(170,185,215,.1);background:rgba(8,12,20,.35);border-radius:10px;min-width:0}.file-type{width:29px;height:29px;border-radius:8px;background:rgba(133,119,255,.12);display:grid;place-items:center;color:#b8adff;font-size:9px;font-weight:800;flex:none}.file-name{font-size:11px;color:#dce2ee;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1}.file-size{font-size:10px;color:#78849a;white-space:nowrap}.empty-files{color:#6f7a90;font-size:11px;text-align:center;padding:14px 0}
+    .build-card{position:sticky;top:16px}.app-preview{display:flex;align-items:center;gap:12px;padding:12px;border:1px solid rgba(170,185,215,.12);background:rgba(8,12,20,.34);border-radius:13px;margin-bottom:18px}.app-avatar{width:42px;height:42px;border-radius:13px;background:linear-gradient(145deg,#9384ff,#5c9fae);display:grid;place-items:center;font:800 17px Manrope,sans-serif;overflow:hidden;flex:none}.app-avatar img{width:100%;height:100%;object-fit:cover;display:none}.preview-meta{min-width:0}.preview-name{font:700 12px Manrope,sans-serif;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.preview-sub{font-size:10px;color:var(--muted);margin-top:4px}.primary-btn{width:100%;border:0;border-radius:12px;padding:15px 18px;background:linear-gradient(105deg,#9b8aff,#7771e8 58%,#56bcb3);color:white;font:800 13px Manrope,sans-serif;letter-spacing:.02em;box-shadow:0 12px 28px rgba(120,105,231,.22);transition:filter .2s,transform .2s}.primary-btn:hover{filter:brightness(1.08)}.build-note{font-size:10px;color:#7e899e;text-align:center;line-height:1.5;margin:10px 4px 0}
+    .terminal-card{margin-top:18px;display:none}.terminal-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px}.terminal-title{font:700 12px Manrope,sans-serif}.terminal-status{font-size:10px;color:#a99cff}.terminal{height:220px;overflow:auto;background:#090c13;border:1px solid rgba(170,185,215,.1);border-radius:11px;padding:13px;font:11px/1.65 ui-monospace,SFMono-Regular,Menlo,monospace;color:#aebbd0;white-space:pre-wrap;overflow-wrap:anywhere}.terminal .ok{color:#72dfb9}.terminal .err{color:#ff899c}.terminal .muted{color:#78859b}.download-wrap{display:none;margin-top:12px}.download-link{display:flex;justify-content:center;align-items:center;gap:9px;text-decoration:none;color:#c9fff0;background:rgba(81,196,157,.12);border:1px solid rgba(81,196,157,.3);padding:12px;border-radius:11px;font-size:12px;font-weight:700}.footer{display:flex;justify-content:space-between;gap:16px;margin-top:22px;color:#68748a;font-size:10px}.toast{position:fixed;left:50%;bottom:22px;transform:translate(-50%,20px);opacity:0;pointer-events:none;background:#242b3b;border:1px solid var(--line);color:#fff;padding:11px 15px;border-radius:10px;font-size:12px;box-shadow:var(--shadow);transition:.25s;z-index:10}.toast.show{opacity:1;transform:translate(-50%,0)}
+    /* Compact, viewport-aware workspace: the document itself never scrolls. */
+    html,body{height:100%;height:100dvh;overflow:hidden;overscroll-behavior:none}.shell{height:100%;height:100dvh;width:min(1240px,calc(100% - 32px));padding:14px 0 12px;display:flex;flex-direction:column;min-height:0}.topbar{flex:none;margin-bottom:12px}.hero{flex:none;margin-bottom:14px}.hero h1{font-size:clamp(25px,3vw,36px)}.hero p{font-size:12px;margin-top:7px;line-height:1.45}.workspace{flex:1;min-height:0;overflow:hidden;grid-template-columns:minmax(0,1.02fr) minmax(340px,.98fr);gap:14px}.stack{min-height:0;overflow-y:auto;overscroll-behavior:contain;scrollbar-width:thin;scrollbar-color:#394258 transparent;gap:12px;padding:1px 4px 8px 1px}.card{padding:16px;border-radius:16px}.card-head{margin-bottom:13px}.field{margin-bottom:12px}.field-hint{margin-top:5px}.icon-layout{grid-template-columns:170px minmax(0,1fr);gap:14px}.crop-wrap{width:170px;height:170px}.drop-zone{padding:15px 12px}.drop-icon{width:34px;height:34px;margin-bottom:8px}.file-list{max-height:120px}.build-card{position:static}.terminal-card{margin-top:0}.terminal{height:190px}.footer{flex:none;margin-top:8px}.saved-tools{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.saved-list{display:grid;gap:7px;margin-top:10px;max-height:150px;overflow:auto}.saved-item{display:flex;align-items:center;gap:8px;padding:9px;border:1px solid var(--line);border-radius:10px;background:rgba(7,11,18,.35);min-width:0}.saved-item strong{font-size:11px;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.saved-item button{padding:7px 9px;font-size:10px}.setting-row{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 0;border-top:1px solid var(--line);font-size:11px;color:#c3ccdc}.setting-row input{accent-color:#a99cff;width:17px;height:17px}.avatar-placeholder{font:800 17px Manrope,sans-serif;color:#fff}.crop-wrap img{object-fit:fill}.app-avatar img{object-fit:contain;background:transparent}.app-avatar{background:linear-gradient(145deg,#9384ff,#5c9fae)}
+    @media(max-width:760px){.workspace{grid-template-columns:1fr;overflow-y:auto}.stack{overflow:visible}.shell{width:calc(100% - 20px)}body,html{overflow:auto;height:auto;min-height:100%;}.shell{height:auto;min-height:100dvh}.workspace{flex:none}.build-card{position:static}.footer{display:none}}
+    @media(max-width:520px){.card{padding:14px}.hero h1{font-size:29px}.icon-layout{grid-template-columns:132px minmax(0,1fr);gap:10px}.crop-wrap{width:132px;height:132px;border-radius:18px}.control-actions{flex-wrap:wrap}.control-actions button{min-width:62px}.top-pill{font-size:10px;padding:7px 9px}.field-row{grid-template-columns:1fr;gap:0}}
+    @media(max-height:850px) and (min-width:761px){.hero{display:none}.shell{padding-top:10px}.card{padding:12px}.icon-layout{grid-template-columns:140px minmax(0,1fr)}.crop-wrap{width:140px;height:140px}.file-list{max-height:86px}.terminal{height:140px}}
+
+    /* Forge v4: true workspace navigation and viewport-contained layout */
+    html,body{width:100%;height:100%;min-height:0;overflow:hidden;overscroll-behavior:none}
+    body{height:100dvh}
+    .shell{height:100dvh;min-height:0;width:min(1240px,calc(100% - 36px));padding:12px 0 9px;display:flex;flex-direction:column;overflow:hidden}
+    .topbar{flex:none;margin-bottom:10px}.hero{flex:none;margin-bottom:10px}.hero h1{font-size:clamp(22px,2.5vw,31px)}.hero p{font-size:11px;line-height:1.4;margin-top:5px}
+    .forge-tabs{display:flex;gap:7px;flex:none;margin:0 0 9px;padding:4px;border:1px solid var(--line);background:rgba(17,22,33,.85);border-radius:13px;width:max-content;max-width:100%}
+    .forge-tab,.stage-tab{border:0;color:#9ca7bc;background:transparent;border-radius:9px;padding:9px 14px;font-size:11px;font-weight:700}
+    .forge-tab.active,.stage-tab.active{color:#fff;background:linear-gradient(110deg,rgba(145,126,255,.24),rgba(83,189,178,.15));box-shadow:inset 0 0 0 1px rgba(169,156,255,.18)}
+    .tab-count{display:inline-grid;place-items:center;min-width:18px;height:18px;padding:0 5px;margin-left:5px;border-radius:99px;background:rgba(169,156,255,.18);font-size:9px}
+    .forge-view{display:none;flex:1;min-height:0;overflow:hidden}.forge-view.active{display:flex;flex-direction:column}
+    .stage-tabs{display:flex;gap:6px;flex:none;margin-bottom:9px}
+    .stage-tab{flex:1;text-align:center;border:1px solid var(--line);background:rgba(17,22,33,.7);padding:9px 8px}
+    .stage-tab span{margin-left:5px}
+    .workspace{flex:1;min-height:0;overflow:hidden;grid-template-columns:minmax(0,1.02fr) minmax(300px,.98fr);gap:12px;align-items:stretch}
+    .workspace>.stack:first-child{display:block;min-height:0;overflow:hidden}
+    .workspace>.stack:first-child>.stage-card{display:none;height:100%;overflow:auto;padding:16px}
+    .workspace>.stack:first-child>.stage-card.active{display:block}
+    .workspace>.stack:last-child{min-height:0;overflow:auto;gap:10px}
+    .card{padding:15px;border-radius:16px}.card-head{margin-bottom:12px}.field{margin-bottom:11px}
+    .icon-layout{grid-template-columns:minmax(120px,170px) minmax(0,1fr);gap:13px}.crop-wrap{width:min(170px,100%);height:auto;aspect-ratio:1}
+    .drop-zone{padding:18px 12px}.file-list{max-height:min(24vh,180px)}
+    .build-card{position:static}.terminal-card{margin-top:0}.terminal{height:min(24vh,170px)}
+    .footer{flex:none;margin-top:7px;font-size:9px}
+    .projects-view{gap:12px}.projects-heading{display:flex;align-items:center;justify-content:space-between;gap:15px;padding:16px;border:1px solid var(--line);border-radius:16px;background:linear-gradient(155deg,rgba(24,30,44,.96),rgba(16,20,30,.98))}
+    .projects-heading h2{font:800 clamp(22px,3vw,30px) Manrope,sans-serif;margin:0;letter-spacing:-.04em}.projects-heading p{font-size:11px;color:var(--muted);margin:6px 0 0;line-height:1.5}
+    .projects-toolbar{display:flex;justify-content:space-between;align-items:center;color:var(--muted);font-size:10px;padding:0 3px}
+    .local-tag{border:1px solid var(--line);border-radius:99px;padding:6px 9px;letter-spacing:.1em;font-size:9px}
+    .projects-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,280px),1fr));gap:10px;align-content:start;overflow:auto;min-height:0;max-height:100%;margin:0;padding:1px}
+    .projects-grid .saved-item{padding:14px;background:linear-gradient(155deg,rgba(24,30,44,.96),rgba(16,20,30,.98));border-radius:13px}
+    .projects-grid .saved-item strong{font-size:12px}.projects-grid .saved-item button{padding:8px 11px}
+    @media(max-height:850px){.hero{display:none}.shell{padding-top:8px}.card{padding:12px}.workspace{gap:9px}.stage-tabs{margin-bottom:7px}.terminal{height:120px}}
+    @media(max-width:760px){
+      .shell{width:calc(100% - 18px)}.workspace{grid-template-columns:minmax(0,1fr) minmax(0,.9fr)}
+      .icon-layout{grid-template-columns:1fr}.crop-wrap{width:min(145px,100%)}.projects-heading{padding:12px}
+    }
+    @media(max-width:560px){
+      .workspace{grid-template-columns:1fr;grid-template-rows:minmax(0,1fr) auto}
+      .workspace>.stack:last-child{max-height:36%;overflow:auto}
+      .workspace>.stack:first-child>.stage-card{padding:12px}
+      .stage-tab{font-size:10px;padding:8px 4px}.stage-tab span{display:block;margin:3px 0 0}
+      .projects-heading{align-items:flex-start;flex-direction:column}.projects-heading .secondary-btn{width:100%}
+      .footer{display:none}
+    }
+
+    /* Forge Studio v5 — compact tablet-first layout and configuration controls */
+    .forge-file-input{width:100%;padding:9px;border:1px solid var(--line);border-radius:10px;background:#0d111b;color:#bfc8d9;font-size:10px}.forge-select{width:100%;min-height:44px;padding:0 12px;border:1px solid rgba(170,185,215,.16);border-radius:10px;background:#0d111b;color:var(--text);font:inherit}
+    .permission-toolbar{display:flex;justify-content:space-between;gap:12px;align-items:flex-start;margin:14px 0 9px}.permission-toolbar strong{font:700 13px Manrope,sans-serif}.permission-toolbar p{font-size:10px;color:var(--muted);line-height:1.5;margin:4px 0 0;max-width:520px}.permission-count,.signing-status{font-size:10px;color:#b9adff;border:1px solid rgba(169,156,255,.22);background:rgba(145,125,255,.09);border-radius:99px;padding:6px 9px;white-space:nowrap}
+    .permission-groups{display:grid;gap:7px}.permission-groups details{border:1px solid var(--line);background:rgba(7,11,18,.28);border-radius:11px;overflow:hidden}.permission-groups summary{cursor:pointer;padding:11px 12px;font:700 11px Manrope,sans-serif;color:#e5e9f4;list-style:none}.permission-groups summary::-webkit-details-marker{display:none}.permission-groups summary:after{content:'＋';float:right;color:#a99cff}.permission-groups details[open] summary:after{content:'−'}.permission-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px;padding:0 8px 9px}.permission-option{display:flex;align-items:flex-start;gap:8px;padding:9px;border:1px solid rgba(170,185,215,.1);border-radius:9px;background:rgba(255,255,255,.018);text-transform:none;letter-spacing:0;margin:0;min-width:0}.permission-option input{accent-color:#a99cff;margin:2px 0 0;flex:none}.permission-option span{min-width:0}.permission-option b{display:block;color:#e4e9f4;font-size:10px;letter-spacing:0}.permission-option small{display:block;color:#8590a5;font-size:9px;line-height:1.35;margin-top:3px;font-weight:400}.signing-panel{margin-top:13px;padding:13px;border:1px solid rgba(105,217,185,.18);border-radius:12px;background:linear-gradient(130deg,rgba(83,189,178,.06),rgba(145,126,255,.06))}.signing-panel>p{margin:6px 0 10px}.signing-status{display:inline-block;margin:0 0 10px;color:#9de4cc;border-color:rgba(105,217,185,.2);background:rgba(105,217,185,.07)}.signing-panel .field{margin-bottom:9px}.signing-panel .field-row{grid-template-columns:1fr 1fr}.signing-panel button{width:100%}
+    @media(max-width:760px){html,body{height:100%;height:100dvh;min-height:0;overflow:hidden}.shell{height:100dvh;min-height:0;width:calc(100% - 16px);padding:8px 0 6px}.topbar{margin-bottom:7px}.hero{display:none}.forge-tabs{margin-bottom:7px}.workspace{grid-template-columns:minmax(0,1fr) minmax(0,.82fr);overflow:hidden}.workspace>.stack:first-child{overflow:hidden}.workspace>.stack:last-child{max-height:none;overflow:auto}.stage-tabs{margin-bottom:7px}.stage-tab{padding:8px 5px;font-size:10px}.stage-tab span{display:block;margin:2px 0 0}.card{padding:12px}.footer{display:none}.projects-view{overflow:auto}}
+    @media(max-width:560px){.workspace{grid-template-columns:minmax(0,1fr);grid-template-rows:minmax(0,1fr) minmax(110px,30%)}.workspace>.stack:last-child{max-height:none;min-height:0}.workspace>.stack:first-child>.stage-card{padding:11px}.permission-grid{grid-template-columns:1fr}.signing-panel .field-row{grid-template-columns:1fr 1fr}.forge-tabs{width:100%}.forge-tab{flex:1}.stage-tab{font-size:9px;padding:7px 3px}.stage-tab span{font-size:9px}}
+    @media(max-height:700px){.topbar{margin-bottom:5px}.forge-tabs{margin-bottom:5px}.stage-tabs{margin-bottom:5px}.stage-tab{padding:6px 4px}.card{padding:10px}.workspace{gap:7px}.terminal{height:90px}}
+\n  </style>
+</head>
+<body>
+  <main class="shell">
+    <header class="topbar">
+      <div class="brand"><div class="brand-mark">F</div><div><div class="brand-name">FORGE STUDIO</div><div class="brand-sub">HTML → Android</div></div></div>
+      <div class="top-pill"><span class="dot"></span> Build environment ready</div>
+    </header>
+
+    <section class="hero">
+      <div class="eyebrow">Your project. Your app.</div>
+      <h1>Turn your web project into an <span>Android app.</span></h1>
+      <p>Prepare your app identity, refine its launcher icon, add your project files, and build a ready-to-install APK from one clean workspace.</p>
+    </section>
+
+
+    <nav class="forge-tabs" aria-label="Forge workspace">
+      <button class="forge-tab active" type="button" data-view="builderView">Build app</button>
+      <button class="forge-tab" type="button" data-view="projectsView">My projects <span id="savedCount" class="tab-count">0</span></button>
+    </nav>
+    <div id="builderView" class="forge-view active">
+      <nav class="stage-tabs" aria-label="Build steps">
+        <button class="stage-tab active" type="button" data-stage="identityCard">01 <span>Identity</span></button>
+        <button class="stage-tab" type="button" data-stage="iconCard">02 <span>Icon</span></button>
+        <button class="stage-tab" type="button" data-stage="filesCard">03 <span>Files</span></button>
+        <button class="stage-tab" type="button" data-stage="androidCard">04 <span>Android</span></button>
+      </nav>
+    <div class="workspace">
+      <div class="stack">
+        <section class="card stage-card active" id="identityCard">
+          <div class="card-head"><div><div class="card-title">App identity</div><div class="card-desc">Set the name and unique Android application ID.</div></div><span class="step">01 / SETUP</span></div>
+          <div class="field"><label for="appName">Application name</label><input id="appName" type="text" value="My App" maxlength="48" autocomplete="off"><div class="field-hint">This is the name displayed beneath your app icon on Android.</div></div>
+          <div class="field"><label for="packageName">Package identifier</label><input id="packageName" type="text" value="com.forgeapps.myapp" spellcheck="false" autocomplete="off"><div class="field-hint">Keep this identifier unchanged when updating an app you've already published.</div></div>
+          <div class="saved-tools"><button class="secondary-btn" type="button" id="saveProjectBtn">Save project settings + files</button><span class="field-hint" id="saveHint">Keep this app ready to rebuild later.</span></div>
+<div class="setting-row"><span>Show Android status bar</span><input id="showStatusBar" type="checkbox" checked aria-label="Show Android status bar"></div>
+        </section>
+
+        <section class="card stage-card" id="iconCard">
+          <div class="card-head"><div><div class="card-title">Launcher icon</div><div class="card-desc">Upload, position, rotate, and prepare a transparent icon.</div></div><span class="step">02 / BRAND</span></div>
+          <input class="hidden-input" type="file" id="iconInput" accept="image/png,image/jpeg,image/webp">
+          <div class="icon-layout">
+            <div>
+              <div class="crop-wrap empty" id="cropContainer"><img id="cropImage" alt="Launcher icon crop preview"></div>
+              <button class="upload-btn" type="button" id="uploadIconBtn" style="margin-top:10px"><span class="plus">＋</span> Choose icon</button>
+              <button class="secondary-btn" type="button" id="changeIconBtn" style="display:none;width:100%;margin-top:10px">Change image</button>
+            </div>
+            <div class="crop-controls" id="iconControls" style="display:none">
+              <div class="control"><label for="zoomSlider">Scale</label><input id="zoomSlider" type="range" min="0.02" max="5" step="0.01" value="1"><output id="zoomValue">100%</output></div>
+              <div class="control"><label for="rotateSlider">Rotation</label><input id="rotateSlider" type="range" min="-180" max="180" step="1" value="0"><output id="rotateValue">0°</output></div>
+              <div class="control-actions"><button class="secondary-btn" type="button" id="rotateLeft">↶ 90°</button><button class="secondary-btn" type="button" id="rotateRight">↷ 90°</button><button class="secondary-btn" type="button" id="resetCrop">Reset</button></div>
+              <button class="remove-btn" type="button" id="removeBgBtn">✦ Remove background</button>
+              <div class="progress-copy" id="bgProgress" aria-live="polite">AI processing runs on this device. First use downloads the model.</div>
+            </div>
+          </div>
+          <div class="icon-foot">Transparent PNG is preserved in the exported launcher icon. The first background-removal run may take longer while its AI model downloads.</div>
+        </section>
+
+        <section class="card stage-card" id="androidCard">
+          <div class="card-head"><div><div class="card-title">Android configuration</div><div class="card-desc">Choose the permissions your app actually uses and configure its release.</div></div><span class="step">04 / ANDROID</span></div>
+          <div class="field-row">
+            <div class="field"><label for="appVersion">Version</label><input id="appVersion" type="text" value="1.0.0" maxlength="24" autocomplete="off"><div class="field-hint">Increase this for every Play Store update.</div></div>
+            <div class="field"><label for="orientation">Orientation</label><select id="orientation" class="forge-select"><option value="portrait">Portrait</option><option value="landscape">Landscape</option><option value="auto">Auto</option></select></div>
+          </div>
+          <div class="setting-row"><span>Show Android status bar</span><input id="showStatusBarAndroid" type="checkbox" checked aria-label="Show Android status bar"></div>
+          <div class="permission-toolbar"><div><strong>App permissions</strong><p>Select only features your app needs. Android still asks users at runtime for sensitive permissions.</p></div><div class="permission-count" id="permissionCount">2 selected</div></div>
+          <div class="permission-groups" id="permissionGroups">
+            <details open><summary>Core & network</summary><div class="permission-grid">
+              <label class="permission-option"><input type="checkbox" value="INTERNET" checked disabled><span><b>Internet</b><small>Network access (always included)</small></span></label>
+              <label class="permission-option"><input type="checkbox" value="ACCESS_NETWORK_STATE" checked><span><b>Network state</b><small>Check connectivity</small></span></label>
+              <label class="permission-option"><input type="checkbox" value="ACCESS_WIFI_STATE"><span><b>Wi-Fi state</b><small>Read Wi-Fi connection state</small></span></label>
+              <label class="permission-option"><input type="checkbox" value="CHANGE_WIFI_STATE"><span><b>Change Wi-Fi</b><small>Manage Wi-Fi connections (where supported)</small></span></label>
+              <label class="permission-option"><input type="checkbox" value="VIBRATE"><span><b>Vibration</b><small>Use the vibration motor</small></span></label>
+              <label class="permission-option"><input type="checkbox" value="WAKE_LOCK"><span><b>Wake lock</b><small>Keep CPU awake for active work</small></span></label>
+            </div></details>
+            <details open><summary>Camera, microphone & media</summary><div class="permission-grid">
+              <label class="permission-option"><input type="checkbox" value="CAMERA"><span><b>Camera</b><small>Capture photos and video</small></span></label>
+              <label class="permission-option"><input type="checkbox" value="RECORD_AUDIO"><span><b>Microphone</b><small>Record audio / voice</small></span></label>
+              <label class="permission-option"><input type="checkbox" value="READ_MEDIA_IMAGES"><span><b>Read images</b><small>Access photos on Android 13+</small></span></label>
+              <label class="permission-option"><input type="checkbox" value="READ_MEDIA_VIDEO"><span><b>Read videos</b><small>Access videos on Android 13+</small></span></label>
+              <label class="permission-option"><input type="checkbox" value="READ_MEDIA_AUDIO"><span><b>Read audio</b><small>Access music and audio files</small></span></label>
+              <label class="permission-option"><input type="checkbox" value="READ_MEDIA_VISUAL_USER_SELECTED"><span><b>Selected photos</b><small>Android 14+ selected media access</small></span></label>
+              <label class="permission-option"><input type="checkbox" value="READ_EXTERNAL_STORAGE"><span><b>Legacy read storage</b><small>Older Android versions (legacy)</small></span></label>
+              <label class="permission-option"><input type="checkbox" value="WRITE_EXTERNAL_STORAGE"><span><b>Legacy write storage</b><small>Older Android versions (legacy)</small></span></label>
+              <label class="permission-option"><input type="checkbox" value="ACCESS_MEDIA_LOCATION"><span><b>Media location</b><small>Read photo location metadata</small></span></label>
+            </div></details>
+            <details open><summary>Location & notifications</summary><div class="permission-grid">
+              <label class="permission-option"><input type="checkbox" value="ACCESS_COARSE_LOCATION"><span><b>Approximate location</b><small>General location</small></span></label>
+              <label class="permission-option"><input type="checkbox" value="ACCESS_FINE_LOCATION"><span><b>Precise location</b><small>GPS-level location</small></span></label>
+              <label class="permission-option"><input type="checkbox" value="ACCESS_BACKGROUND_LOCATION"><span><b>Background location</b><small>Location while app is not in use</small></span></label>
+              <label class="permission-option"><input type="checkbox" value="POST_NOTIFICATIONS"><span><b>Notifications</b><small>Post notifications (Android 13+)</small></span></label>
+              <label class="permission-option"><input type="checkbox" value="SCHEDULE_EXACT_ALARM"><span><b>Exact alarms</b><small>Schedule exact-time alarms</small></span></label>
+              <label class="permission-option"><input type="checkbox" value="RECEIVE_BOOT_COMPLETED"><span><b>Start after reboot</b><small>Receive device boot event</small></span></label>
+            </div></details>
+            <details><summary>Contacts, calendar & phone</summary><div class="permission-grid">
+              <label class="permission-option"><input type="checkbox" value="READ_CONTACTS"><span><b>Read contacts</b><small>View saved contacts</small></span></label>
+              <label class="permission-option"><input type="checkbox" value="WRITE_CONTACTS"><span><b>Write contacts</b><small>Add or edit contacts</small></span></label>
+              <label class="permission-option"><input type="checkbox" value="GET_ACCOUNTS"><span><b>Accounts</b><small>Read account list (legacy)</small></span></label>
+              <label class="permission-option"><input type="checkbox" value="READ_CALENDAR"><span><b>Read calendar</b><small>View calendar events</small></span></label>
+              <label class="permission-option"><input type="checkbox" value="WRITE_CALENDAR"><span><b>Write calendar</b><small>Create or edit events</small></span></label>
+              <label class="permission-option"><input type="checkbox" value="READ_PHONE_STATE"><span><b>Phone state</b><small>Read limited phone state</small></span></label>
+              <label class="permission-option"><input type="checkbox" value="CALL_PHONE"><span><b>Place calls</b><small>Initiate phone calls</small></span></label>
+              <label class="permission-option"><input type="checkbox" value="ANSWER_PHONE_CALLS"><span><b>Answer calls</b><small>Answer incoming calls</small></span></label>
+              <label class="permission-option"><input type="checkbox" value="READ_PHONE_NUMBERS"><span><b>Phone numbers</b><small>Read device phone numbers</small></span></label>
+            </div></details>
+            <details><summary>Bluetooth, nearby devices & sensors</summary><div class="permission-grid">
+              <label class="permission-option"><input type="checkbox" value="BLUETOOTH_SCAN"><span><b>Bluetooth scan</b><small>Discover nearby Bluetooth devices</small></span></label>
+              <label class="permission-option"><input type="checkbox" value="BLUETOOTH_CONNECT"><span><b>Bluetooth connect</b><small>Connect to paired devices</small></span></label>
+              <label class="permission-option"><input type="checkbox" value="BLUETOOTH_ADVERTISE"><span><b>Bluetooth advertise</b><small>Make device discoverable</small></span></label>
+              <label class="permission-option"><input type="checkbox" value="NEARBY_WIFI_DEVICES"><span><b>Nearby Wi-Fi devices</b><small>Discover or connect to nearby Wi-Fi devices</small></span></label>
+              <label class="permission-option"><input type="checkbox" value="NFC"><span><b>NFC</b><small>Near-field communication</small></span></label>
+              <label class="permission-option"><input type="checkbox" value="ACTIVITY_RECOGNITION"><span><b>Activity recognition</b><small>Detect physical activity</small></span></label>
+              <label class="permission-option"><input type="checkbox" value="BODY_SENSORS"><span><b>Body sensors</b><small>Access supported body sensors</small></span></label>
+            </div></details>
+            <details><summary>Messaging & advanced permissions</summary><div class="permission-grid">
+              <label class="permission-option"><input type="checkbox" value="SEND_SMS"><span><b>Send SMS</b><small>Send text messages</small></span></label>
+              <label class="permission-option"><input type="checkbox" value="RECEIVE_SMS"><span><b>Receive SMS</b><small>Receive text messages</small></span></label>
+              <label class="permission-option"><input type="checkbox" value="READ_SMS"><span><b>Read SMS</b><small>Read text messages</small></span></label>
+              <label class="permission-option"><input type="checkbox" value="RECEIVE_MMS"><span><b>Receive MMS</b><small>Receive multimedia messages</small></span></label>
+              <label class="permission-option"><input type="checkbox" value="SYSTEM_ALERT_WINDOW"><span><b>Display over other apps</b><small>Special user-granted access</small></span></label>
+              <label class="permission-option"><input type="checkbox" value="REQUEST_IGNORE_BATTERY_OPTIMIZATIONS"><span><b>Ignore battery optimizations</b><small>Special user-granted access</small></span></label>
+              <label class="permission-option"><input type="checkbox" value="REQUEST_INSTALL_PACKAGES"><span><b>Request package installs</b><small>Special access; Play policy restrictions apply</small></span></label>
+              <label class="permission-option"><input type="checkbox" value="MANAGE_EXTERNAL_STORAGE"><span><b>Manage all files</b><small>Highly restricted; Play approval may be required</small></span></label>
+            </div></details>
+          </div>
+          <div class="signing-panel">
+            <div class="card-title">Play Store signing</div>
+            <p class="field-hint">Create a release key once, keep a secure backup, and use the same key for future updates. Forge never displays or saves your key password in the project library.</p>
+            <div class="signing-status" id="keystoreStatus">No release key selected</div>
+            <div class="field"><label for="keystoreFile">Your release keystore (.jks / .keystore)</label><input id="keystoreFile" type="file" accept=".jks,.keystore,.p12,.pfx" class="forge-file-input"></div>
+            <div class="field"><label for="keystorePassword">Release key password</label><input id="keystorePassword" type="password" placeholder="Enter the password for this key" autocomplete="new-password"></div>
+            <div class="field-row"><button class="secondary-btn" type="button" id="createKeystoreBtn">Create new release key</button><span class="field-hint">A new key downloads to your device. Select that file above for signing.</span></div>
+            <div class="field-hint">Your key is uploaded only for the build and removed from temporary server storage afterward. Keep your own secure backup. Never lose or replace the key used for a published app.</div>
+          </div>
+        </section>
+        <section class="card stage-card" id="filesCard">
+          <div class="card-head"><div><div class="card-title">Project files</div><div class="card-desc">Add an HTML file, a complete project folder, or a ZIP archive.</div></div><span class="step">03 / SOURCE</span></div>
+          <input class="hidden-input" type="file" id="fileInput" multiple>
+          <input class="hidden-input" type="file" id="folderInput" webkitdirectory directory multiple>
+          <div class="drop-zone" id="dropZone">
+            <div class="drop-icon">↑</div><div class="drop-title">Drop your project files here</div><div class="drop-sub">HTML, CSS, JavaScript, images, fonts, or a ZIP archive</div>
+            <div class="drop-actions"><button type="button" class="upload-btn" id="browseFiles"><span class="plus">＋</span> Browse files</button><button type="button" class="secondary-btn" id="browseFolder">Select folder</button></div>
+          </div>
+          <div class="file-list" id="fileList"><div class="empty-files">Your selected project files will appear here.</div></div>
+          <div class="field-hint" id="fileSummary">A single HTML file is automatically set as the app entry point. Project folders and relative assets are kept together.</div>
+        </section>
+      </div>
+
+      <div class="stack">
+        <section class="card build-card">
+          <div class="card-head"><div><div class="card-title">Build your application</div><div class="card-desc">Review your app identity before starting the Android build.</div></div><span class="step">04 / EXPORT</span></div>
+          <div class="app-preview"><div class="app-avatar" id="appAvatar"><img id="avatarImage" alt=""></div><div class="preview-meta"><div class="preview-name" id="previewName">My App</div><div class="preview-sub">Android application · APK</div></div></div>
+          <div class="field"><label for="buildTarget">Build target</label><select id="buildTarget" class="forge-select"><option value="apk">APK · Device testing</option><option value="aab">AAB · Google Play Store</option></select></div>
+          <div class="setting-row"><span>Sign as release build</span><input id="releaseBuild" type="checkbox" aria-label="Sign as release build"></div>
+          <div class="field-hint" id="buildTargetHint">APK is suitable for installing and testing on a device.</div>
+          <button class="primary-btn" type="button" id="go">Build Android APK <span aria-hidden="true">→</span></button>
+          <div class="build-note">Your source files and icon are packaged into a native Android application. Build time depends on project size and server capacity.</div>
+          <div class="download-wrap" id="downloadWrap"><a class="download-link" id="downloadLink" href="#">↓ Download your APK</a></div>
+        </section>
+
+        <section class="card terminal-card" id="terminalCard">
+          <div class="terminal-head"><div class="terminal-title">Build activity</div><div class="terminal-status" id="terminalStatus">INITIALIZING</div></div>
+          <div class="terminal" id="terminal" role="log" aria-live="polite"></div>
+        </section>
+      </div>
+    </div>
+    <footer class="footer"><span>FORGE STUDIO · BUILD WORKSPACE</span><span>Designed for focused, reliable app creation</span></footer>
+    </div>
+    <section id="projectsView" class="projects-view forge-view">
+      <div class="projects-heading"><div><div class="eyebrow">YOUR LIBRARY</div><h2>My projects</h2><p>Reopen a saved app, update its files, and rebuild with the same identity and settings.</p></div><button type="button" class="secondary-btn" id="newProjectBtn">＋ New project</button></div>
+      <div class="projects-toolbar"><span id="projectsDescription">Saved on this device</span><span class="local-tag">LOCAL LIBRARY</span></div>
+      <div class="saved-list projects-grid" id="savedProjects"><div class="empty-files">No saved projects yet. Open Build app, add your source files, then save your project.</div></div>
+    </section>
+  </main>
+  <div class="toast" id="toast" role="status"></div>
+
+<script>
+(() => {
+  'use strict';
+
+  const $ = id => document.getElementById(id);
+  // Navigation: keep the build workspace and saved library on separate, screen-fitted views.
+  document.querySelectorAll('.forge-tab').forEach(tab => tab.addEventListener('click', () => {
+    document.querySelectorAll('.forge-tab').forEach(item => item.classList.toggle('active', item === tab));
+    document.querySelectorAll('.forge-view').forEach(view => view.classList.toggle('active', view.id === tab.dataset.view));
+    if (tab.dataset.view === 'projectsView') refreshSavedProjects();
+  }));
+  document.querySelectorAll('.stage-tab').forEach(tab => tab.addEventListener('click', () => {
+    document.querySelectorAll('.stage-tab').forEach(item => item.classList.toggle('active', item === tab));
+    document.querySelectorAll('.stage-card').forEach(card => card.classList.toggle('active', card.id === tab.dataset.stage));
+  }));
+  $('newProjectBtn').addEventListener('click', () => {
+    document.querySelector('.forge-tab[data-view="builderView"]').click();
+    document.querySelector('.stage-tab[data-stage="identityCard"]').click();
+    $('appName').value = 'My App'; $('packageName').value = packageFromName('My App');
+    packageWasEdited = false; selectedFiles = []; iconDataUrl = null; originalIconDataUrl = null; $('keystoreFile').value=''; $('keystorePassword').value=''; $('releaseBuild').disabled=false; refreshKeystoreStatus();
+    $('fileList').innerHTML = '<div class="empty-files">Your selected project files will appear here.</div>';
+    $('fileSummary').textContent = 'A single HTML file is automatically set as the app entry point.';
+    $('avatarImage').style.display = 'none'; $('cropImage').style.display = 'none'; $('cropContainer').classList.add('empty');
+    $('uploadIconBtn').style.display = 'flex'; $('changeIconBtn').style.display = 'none'; $('iconControls').style.display = 'none';
+    $('previewName').textContent = 'My App'; $('showStatusBar').checked = true; $('showStatusBarAndroid').checked=true; $('appVersion').value='1.0.0'; $('orientation').value='portrait'; $('buildTarget').value='apk'; $('releaseBuild').checked=false; $('releaseBuild').disabled=false; $('go').innerHTML='Build Android APK <span aria-hidden="true">→</span>'; applySavedPermissions(['INTERNET','ACCESS_NETWORK_STATE']);
+  });
+
+  let selectedFiles = [];
+  let iconDataUrl = null;
+  let originalIconDataUrl = null;
+  let imageObjectUrl = null;
+  let isDragging = false;
+  let dragStartX = 0, dragStartY = 0, imgX = 0, imgY = 0;
+  let packageWasEdited = false;
+  let bgModulePromise = null;
+  const cropImg = $('cropImage');
+  const cropContainer = $('cropContainer');
+
+  // Saved projects live in this browser on this device (IndexedDB), including their source files.
+  const DB_NAME = 'forge-studio-local', DB_STORE = 'projects';
+  function openProjectDB() {
+    return new Promise((resolve, reject) => {
+      const request = indexedDB.open(DB_NAME, 1);
+      request.onupgradeneeded = () => { if (!request.result.objectStoreNames.contains(DB_STORE)) request.result.createObjectStore(DB_STORE, { keyPath: 'id' }); };
+      request.onsuccess = () => resolve(request.result); request.onerror = () => reject(request.error);
+    });
+  }
+  async function dbAction(mode, action) {
+    const db = await openProjectDB();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(DB_STORE, mode), store = tx.objectStore(DB_STORE);
+      const req = action(store); req.onsuccess = () => resolve(req.result); req.onerror = () => reject(req.error);
+      tx.oncomplete = () => db.close(); tx.onerror = () => reject(tx.error);
+    });
+  }
+  async function refreshSavedProjects() {
+    try {
+      const records = await dbAction('readonly', store => store.getAll());
+      const list = $('savedProjects'); list.replaceChildren(); $('savedCount').textContent = String(records.length);
+      if (!records.length) { const empty=document.createElement('div'); empty.className='empty-files'; empty.textContent='No saved projects yet.'; list.appendChild(empty); return; }
+      records.sort((a,b)=>b.updatedAt-a.updatedAt).forEach(record => {
+        const row=document.createElement('div'); row.className='saved-item';
+        const name=document.createElement('strong'); name.textContent=record.appName;
+        const load=document.createElement('button'); load.className='secondary-btn'; load.textContent='Open'; load.addEventListener('click',()=>{loadSavedProject(record.id);document.querySelector('.forge-tab[data-view="builderView"]').click();document.querySelector('.stage-tab[data-stage="identityCard"]').click();});
+        const remove=document.createElement('button'); remove.className='secondary-btn'; remove.textContent='Delete'; remove.addEventListener('click',async()=>{await dbAction('readwrite',s=>s.delete(record.id));refreshSavedProjects();toast('Saved project deleted.');});
+        row.append(name,load,remove); list.appendChild(row);
+      });
+    } catch (error) { $('saveHint').textContent='Local project saving is unavailable in this browser.'; }
+  }
+  async function saveCurrentProject() {
+    if (!selectedFiles.length) { toast('Choose your HTML/project files before saving.'); return; }
+    try {
+      const record={id: $('packageName').value.trim(), appName:$('appName').value.trim()||'My App', packageName:$('packageName').value.trim(), iconDataUrl, showStatusBar:$('showStatusBar').checked, appVersion:$('appVersion').value, orientation:$('orientation').value, buildTarget:$('buildTarget').value, releaseBuild:$('releaseBuild').checked, permissions:getSelectedPermissions(), updatedAt:Date.now(), files:[]};
+      for (const file of selectedFiles) record.files.push({name:file.name,type:file.type,lastModified:file.lastModified,relativePath:file._relativePath||file.webkitRelativePath||file.name,blob:file.slice(0,file.size,file.type)});
+      await dbAction('readwrite',store=>store.put(record));
+      await refreshSavedProjects(); $('saveHint').textContent='Saved on this device.'; toast('Project saved. You can reopen it anytime.');
+    } catch(error) { toast('Could not save this project: '+error.message); }
+  }
+  async function loadSavedProject(id) {
+    try {
+      const record=await dbAction('readonly',store=>store.get(id)); if(!record) return;
+      $('appName').value=record.appName; $('packageName').value=record.packageName; $('previewName').textContent=record.appName;
+      packageWasEdited=true; $('showStatusBar').checked=record.showStatusBar!==false; $('showStatusBarAndroid').checked=record.showStatusBar!==false; $('appVersion').value=record.appVersion||'1.0.0'; $('orientation').value=record.orientation||'portrait'; $('buildTarget').value=record.buildTarget||'apk'; $('releaseBuild').checked=!!record.releaseBuild || record.buildTarget==='aab'; $('releaseBuild').disabled=$('buildTarget').value==='aab'; $('buildTargetHint').textContent=$('buildTarget').value==='aab'?'AAB is the Play Console upload format. A release key and full JDK are required.':'APK is suitable for installing and testing on a device.'; applySavedPermissions(record.permissions);
+      selectedFiles=record.files.map(item=>{const file=new File([item.blob],item.name,{type:item.type,lastModified:item.lastModified});file._relativePath=item.relativePath||item.name;return file;});
+      const list=$('fileList'); list.replaceChildren();
+      selectedFiles.forEach(file=>{const row=document.createElement('div');row.className='file-item';const kind=document.createElement('div');kind.className='file-type';kind.textContent=fileKind(file);const name=document.createElement('div');name.className='file-name';name.textContent=file.name;const size=document.createElement('div');size.className='file-size';size.textContent=formatSize(file.size);row.append(kind,name,size);list.appendChild(row);});
+      $('fileSummary').textContent=`${selectedFiles.length} saved files restored · ${formatSize(selectedFiles.reduce((n,f)=>n+f.size,0))} total`;
+      if(record.iconDataUrl) { originalIconDataUrl=record.iconDataUrl; showIcon(record.iconDataUrl); }
+      else { iconDataUrl=null; $('avatarImage').style.display='none'; }
+      toast('Saved project loaded. Replace only the files you want to update.');
+    } catch(error) { toast('Could not open saved project: '+error.message); }
+  }
+  $('saveProjectBtn').addEventListener('click',saveCurrentProject);
+  refreshSavedProjects();
+
+  function toast(message) {
+    const node = $('toast'); node.textContent = message; node.classList.add('show');
+    clearTimeout(toast.timer); toast.timer = setTimeout(() => node.classList.remove('show'), 2600);
+  }
+  function packageFromName(value) {
+    const clean = String(value).toLowerCase().normalize('NFKD').replace(/[^a-z0-9]+/g, '').slice(0, 36) || 'myapp';
+    return `com.forgeapps.${clean}`;
+  }
+  function validPackage(value) {
+    return /^[a-zA-Z][a-zA-Z0-9_]*(\.[a-zA-Z][a-zA-Z0-9_]*)+$/.test(value) && value.length <= 180;
+  }
+  $('appName').addEventListener('input', () => {
+    $('previewName').textContent = $('appName').value.trim() || 'My App';
+    if (!packageWasEdited) $('packageName').value = packageFromName($('appName').value);
+    $('packageName').style.borderColor = '';
+  });
+  $('packageName').addEventListener('input', () => { packageWasEdited = true; });
+
+  function formatSize(bytes) {
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  }
+  function fileKind(file) {
+    const ext = (file.name.split('.').pop() || 'FILE').toUpperCase();
+    return ext.length > 5 ? 'FILE' : ext;
+  }
+  function handleFiles(fileList) {
+    const files = Array.from(fileList || []);
+    if (!files.length) return;
+    selectedFiles = files;
+    const list = $('fileList'); list.replaceChildren();
+    files.slice(0, 120).forEach(file => {
+      const row = document.createElement('div'); row.className = 'file-item';
+      const kind = document.createElement('div'); kind.className = 'file-type'; kind.textContent = fileKind(file);
+      const name = document.createElement('div'); name.className = 'file-name'; name.textContent = file.webkitRelativePath || file.name; name.title = name.textContent;
+      const size = document.createElement('div'); size.className = 'file-size'; size.textContent = formatSize(file.size);
+      row.append(kind, name, size); list.appendChild(row);
+    });
+    if (files.length > 120) {
+      const more = document.createElement('div'); more.className = 'empty-files'; more.textContent = `+ ${files.length - 120} more files`; list.appendChild(more);
+    }
+    $('fileSummary').textContent = `${files.length} file${files.length === 1 ? '' : 's'} selected · ${formatSize(files.reduce((sum, f) => sum + f.size, 0))} total`;
+    $('terminalCard').style.display = 'none'; $('downloadWrap').style.display = 'none';
+  }
+  $('browseFiles').addEventListener('click', () => $('fileInput').click());
+  $('browseFolder').addEventListener('click', () => $('folderInput').click());
+  $('fileInput').addEventListener('change', event => handleFiles(event.target.files));
+  $('folderInput').addEventListener('change', event => handleFiles(event.target.files));
+  const dropZone = $('dropZone');
+  ['dragenter', 'dragover'].forEach(type => dropZone.addEventListener(type, event => { event.preventDefault(); dropZone.classList.add('dragover'); }));
+  ['dragleave', 'drop'].forEach(type => dropZone.addEventListener(type, event => { event.preventDefault(); dropZone.classList.remove('dragover'); }));
+  dropZone.addEventListener('drop', event => { if (event.dataTransfer && event.dataTransfer.files.length) handleFiles(event.dataTransfer.files); });
+
+  function revokeImageUrl() { if (imageObjectUrl) URL.revokeObjectURL(imageObjectUrl); imageObjectUrl = null; }
+  function showIcon(dataUrl) {
+    revokeImageUrl(); iconDataUrl = dataUrl; cropImg.onload = () => initCrop(); cropImg.onerror = () => toast('This image could not be decoded. Try a PNG or JPEG.');
+    cropImg.src = dataUrl; cropImg.style.display = 'block'; cropContainer.classList.remove('empty');
+    $('uploadIconBtn').style.display = 'none'; $('changeIconBtn').style.display = 'block'; $('iconControls').style.display = 'grid';
+    $('avatarImage').src = dataUrl; $('avatarImage').style.display = 'block'; $('appAvatar').firstChild && ($('appAvatar').style.background = 'transparent');
+  }
+  function loadIcon(file) {
+    if (!file) return;
+    if (!/^image\/(png|jpeg|webp)$/.test(file.type)) { toast('Please choose a PNG, JPEG, or WebP image.'); return; }
+    if (file.size > 20 * 1024 * 1024) { toast('Please choose an image smaller than 20 MB.'); return; }
+    const reader = new FileReader();
+    reader.onload = event => { originalIconDataUrl = event.target.result; showIcon(originalIconDataUrl); };
+    reader.onerror = () => toast('The selected image could not be read.');
+    reader.readAsDataURL(file);
+  }
+  $('iconInput').addEventListener('change', event => { loadIcon(event.target.files && event.target.files[0]); event.target.value = ''; });
+  $('uploadIconBtn').addEventListener('click', () => $('iconInput').click());
+  $('changeIconBtn').addEventListener('click', () => $('iconInput').click());
+
+  function initCrop() {
+    if (!cropImg.naturalWidth || !cropImg.naturalHeight) return;
+    const width = cropImg.naturalWidth, height = cropImg.naturalHeight;
+    imgX = 100 - width / 2; imgY = 100 - height / 2;
+    const scale = Math.min(200 / width, 200 / height);
+    $('zoomSlider').value = Math.max(.02, Math.min(5, scale)); $('rotateSlider').value = 0;
+    updateCropTransform();
+  }
+  function updateCropTransform() {
+    const zoom = Number($('zoomSlider').value), rotate = Number($('rotateSlider').value);
+    cropImg.style.transform = `translate(${imgX}px, ${imgY}px) rotate(${rotate}deg) scale(${zoom})`;
+    $('zoomValue').textContent = `${Math.round(zoom * 100)}%`; $('rotateValue').textContent = `${rotate}°`;
+  }
+  $('zoomSlider').addEventListener('input', updateCropTransform);
+  $('rotateSlider').addEventListener('input', updateCropTransform);
+  $('rotateLeft').addEventListener('click', () => { $('rotateSlider').value = Math.max(-180, Number($('rotateSlider').value) - 90); updateCropTransform(); });
+  $('rotateRight').addEventListener('click', () => { $('rotateSlider').value = Math.min(180, Number($('rotateSlider').value) + 90); updateCropTransform(); });
+  $('resetCrop').addEventListener('click', initCrop);
+
+  cropContainer.addEventListener('pointerdown', event => {
+    if (!iconDataUrl) return;
+    isDragging = true; cropContainer.setPointerCapture(event.pointerId);
+    dragStartX = event.clientX - imgX; dragStartY = event.clientY - imgY;
+  });
+  cropContainer.addEventListener('pointermove', event => {
+    if (!isDragging) return;
+    const rect = cropContainer.getBoundingClientRect();
+    imgX = (event.clientX - dragStartX) * (200 / rect.width);
+    imgY = (event.clientY - dragStartY) * (200 / rect.height);
+    updateCropTransform();
+  });
+  ['pointerup', 'pointercancel', 'lostpointercapture'].forEach(type => cropContainer.addEventListener(type, () => { isDragging = false; }));
+
+  async function getBackgroundModule() {
+    if (!bgModulePromise) {
+      bgModulePromise = import('https://cdn.jsdelivr.net/npm/@imgly/background-removal@1.7.0/+esm')
+        .then(module => {
+          const remove = module.removeBackground || module.default;
+          if (typeof remove !== 'function') throw new Error('The background-removal module did not expose its processing function.');
+          return remove;
+        })
+        .catch(error => { bgModulePromise = null; throw error; });
+    }
+    return bgModulePromise;
+  }
+  $('removeBgBtn').addEventListener('click', async () => {
+    if (!iconDataUrl) { toast('Choose an icon first.'); return; }
+    const button = $('removeBgBtn'), status = $('bgProgress');
+    button.disabled = true; button.textContent = 'Preparing AI…'; status.textContent = 'Loading the background-removal engine. The first download can be large.'; status.style.color = '#a9b5ca';
+    try {
+      const removeBackground = await getBackgroundModule();
+      const sourceBlob = await (await fetch(iconDataUrl)).blob();
+      const result = await removeBackground(sourceBlob, {
+        model: 'isnet_quint8', device: 'cpu', output: { format: 'image/png', quality: 1 },
+        progress: (key, current, total) => {
+          const percent = total > 0 ? Math.round(current / total * 100) : 0;
+          status.textContent = key.startsWith('fetch:') ? `Downloading AI model… ${percent}%` : key.startsWith('compute:') ? 'Detecting the subject and refining transparent edges…' : 'Preparing image…';
+        }
+      });
+      if (!(result instanceof Blob) || !result.size) throw new Error('The AI returned an empty image.');
+      const dataUrl = await new Promise((resolve, reject) => {
+        const reader = new FileReader(); reader.onload = () => resolve(reader.result); reader.onerror = () => reject(new Error('Could not read the processed PNG.')); reader.readAsDataURL(result);
+      });
+      showIcon(dataUrl); status.textContent = 'Background removed. Transparent PNG is ready.'; status.style.color = '#72dfb9';
+    } catch (error) {
+      console.error('Background removal failed:', error);
+      status.textContent = `Could not remove background: ${error.message || 'Unknown error'}. Check your connection and try again.`;
+      status.style.color = '#ff899c';
+    } finally { button.disabled = false; button.textContent = '✦ Remove background'; }
+  });
+
+  async function getCroppedIconBlob() {
+    if (!iconDataUrl) return null;
+    if (cropImg.decode) await cropImg.decode();
+    if (!cropImg.naturalWidth || !cropImg.naturalHeight) throw new Error('The launcher icon has not finished loading.');
+    const canvas = document.createElement('canvas'); canvas.width = 512; canvas.height = 512;
+    const ctx = canvas.getContext('2d', { alpha: true });
+    if (!ctx) throw new Error('This browser could not create an image canvas.');
+    ctx.clearRect(0, 0, 512, 512); ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = 'high';
+    const zoom = Number($('zoomSlider').value), rotation = Number($('rotateSlider').value) * Math.PI / 180;
+    ctx.translate(256, 256);
+    ctx.translate(imgX * 2.56, imgY * 2.56);
+    ctx.rotate(rotation);
+    ctx.scale(zoom * 2.56, zoom * 2.56);
+    ctx.drawImage(cropImg, -cropImg.naturalWidth / 2, -cropImg.naturalHeight / 2);
+    const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/png'));
+    if (!blob || !blob.size) throw new Error('The icon could not be exported as a transparent PNG.');
+    return new File([blob], 'icon.png', { type: 'image/png', lastModified: Date.now() });
+  }
+
+  function appendLog(message) {
+    const terminal = $('terminal');
+    const line = document.createElement('div');
+    if (message === 'BUILD_COMPLETE') { line.className = 'ok'; line.textContent = '✓ Build completed successfully.'; }
+    else if (message.startsWith('BUILD_ERROR:')) { line.className = 'err'; line.textContent = `✕ ${message.slice(12).trim()}`; }
+    else { line.textContent = message; }
+    terminal.appendChild(line); terminal.scrollTop = terminal.scrollHeight;
+  }
+  const PERMISSION_DEFAULTS = ['INTERNET','ACCESS_NETWORK_STATE'];
+  function getSelectedPermissions() {
+    return [...document.querySelectorAll('#permissionGroups input[type=checkbox]:checked')].map(el=>el.value).filter((v,i,a)=>a.indexOf(v)===i);
+  }
+  function applySavedPermissions(list) {
+    const selected = new Set(Array.isArray(list) ? list : PERMISSION_DEFAULTS);
+    document.querySelectorAll('#permissionGroups input[type=checkbox]').forEach(el=>{el.checked=el.disabled||selected.has(el.value);});
+    updatePermissionCount();
+  }
+  function updatePermissionCount(){ const n=getSelectedPermissions().length; $('permissionCount').textContent=`${n} selected`; }
+  document.querySelectorAll('#permissionGroups input[type=checkbox]').forEach(el=>el.addEventListener('change',updatePermissionCount));
+  $('showStatusBarAndroid').addEventListener('change',()=>{$('showStatusBar').checked=$('showStatusBarAndroid').checked;});
+  $('showStatusBar').addEventListener('change',()=>{$('showStatusBarAndroid').checked=$('showStatusBar').checked;});
+  $('buildTarget').addEventListener('change',()=>{const a=$('buildTarget').value==='aab';$('buildTargetHint').textContent=a?'AAB is the Play Console upload format. A release key and full JDK are required.':'APK is suitable for installing and testing on a device.';$('releaseBuild').checked=a||$('releaseBuild').checked; $('releaseBuild').disabled=a; $('go').innerHTML=a?'Build Android AAB <span aria-hidden="true">→</span>':'Build Android APK <span aria-hidden="true">→</span>';});
+  function refreshKeystoreStatus(){ $('keystoreStatus').textContent=$('keystoreFile').files.length ? 'Release key selected · ready for signing' : 'No release key selected'; }
+  $('keystoreFile').addEventListener('change',refreshKeystoreStatus);
+  $('createKeystoreBtn').addEventListener('click',async()=>{const password=$('keystorePassword').value;if(password.length<8){toast('Use a release-key password with at least 8 characters.');return;}const b=$('createKeystoreBtn');b.disabled=true;b.textContent='Generating key…';try{const r=await fetch('/api/keystore/create',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({password})});if(!r.ok){const d=await r.json().catch(()=>({}));throw new Error(d.message||'Could not create key');}const blob=await r.blob();const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download='forge-release.keystore';document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1500);$('keystoreStatus').textContent='New key downloaded · select the file above';toast('Release key downloaded. Keep it safe, then select it above.');}catch(e){toast(e.message);}finally{b.disabled=false;b.textContent='Create new release key';}});
+  async function build() {
+    const appName = $('appName').value.trim() || 'My App';
+    const packageName = $('packageName').value.trim();
+    if (!selectedFiles.length) { toast('Add your project files before building.'); return; }
+    if (!validPackage(packageName)) { $('packageName').style.borderColor = '#ff899c'; $('packageName').focus(); toast('Enter a valid package ID, such as com.forgeapps.myapp.'); return; }
+    if (!/^\d+\.\d+\.\d+(?:[-+][A-Za-z0-9.-]+)?$/.test($('appVersion').value.trim())) { toast('Version must look like 1.0.0.'); return; }
+    const requiresRelease = $('buildTarget').value === 'aab' || $('releaseBuild').checked;
+    if (requiresRelease && (!$('keystoreFile').files.length || $('keystorePassword').value.length < 8)) { toast('Select your release keystore and enter its password before building.'); document.querySelector('.stage-tab[data-stage=androidCard]').click(); $('keystorePassword').focus(); return; }
+    const button = $('go'); button.disabled = true; button.textContent = 'Preparing build…';
+    $('terminalCard').style.display = 'block'; $('downloadWrap').style.display = 'none'; $('terminal').replaceChildren(); $('terminalStatus').textContent = 'PREPARING';
+    $('terminalCard').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    try {
+      const formData = new FormData(); formData.append('appName', appName); formData.append('packageName', packageName); formData.append('statusBar', String($('showStatusBarAndroid').checked)); formData.append('permissions', JSON.stringify(getSelectedPermissions())); formData.append('version', $('appVersion').value.trim() || '1.0.0'); formData.append('orientation', $('orientation').value); formData.append('target', $('buildTarget').value); formData.append('release', String(requiresRelease)); formData.append('keystorePassword', requiresRelease ? $('keystorePassword').value : '');
+      if (iconDataUrl) formData.append('files', await getCroppedIconBlob(), 'icon.png');
+      if (requiresRelease) formData.append('files', $('keystoreFile').files[0], 'nitron-release.keystore');
+      selectedFiles.forEach(file => formData.append('files', file, file._relativePath || file.webkitRelativePath || file.name));
+      appendLog('Uploading project files…');
+      const response = await fetch('/api/jobs', { method: 'POST', body: formData });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.message || `Server returned ${response.status}`);
+      $('terminalStatus').textContent = 'BUILDING'; button.textContent = 'Building APK…';
+      const source = new EventSource(`/api/logs/${encodeURIComponent(data.id)}`);
+      let completed = false;
+      source.onmessage = async event => {
+        let message; try { message = JSON.parse(event.data); } catch (_) { message = event.data; }
+        appendLog(String(message));
+        if (message === 'BUILD_COMPLETE') {
+          completed = true; source.close(); $('terminalStatus').textContent = 'COMPLETE';
+          const statusResponse = await fetch(`/api/jobs/${encodeURIComponent(data.id)}`);
+          const statusData = await statusResponse.json();
+          if (statusData.downloadUrl || statusData.apk_url) {
+            $('downloadLink').href = statusData.downloadUrl || statusData.apk_url;
+            $('downloadLink').setAttribute('download', `${appName.replace(/[^a-zA-Z0-9_-]+/g, '-').replace(/^-|-$/g, '') || 'app'}.${$('buildTarget').value === 'aab' ? 'aab' : 'apk'}`);
+            $('downloadWrap').style.display = 'block';
+          }
+          button.disabled = false; button.innerHTML = 'Build Android APK <span aria-hidden="true">→</span>'; await saveCurrentProject(); toast(`Your ${$('buildTarget').value.toUpperCase()} is ready.`);
+        } else if (String(message).startsWith('BUILD_ERROR:')) {
+          completed = true; source.close(); $('terminalStatus').textContent = 'FAILED';
+          button.disabled = false; button.innerHTML = 'Build Android APK <span aria-hidden="true">→</span>';
+        }
+      };
+      source.onerror = async () => {
+        source.close();
+        if (completed) return;
+        try {
+          const statusResponse = await fetch(`/api/jobs/${encodeURIComponent(data.id)}`);
+          const statusData = await statusResponse.json();
+          if (statusData.status === 'done') {
+            $('terminalStatus').textContent = 'COMPLETE'; $('downloadLink').href = statusData.downloadUrl || statusData.apk_url; $('downloadWrap').style.display = 'block'; await saveCurrentProject();
+          } else if (statusData.status === 'error') {
+            $('terminalStatus').textContent = 'FAILED'; appendLog(`BUILD_ERROR: ${statusData.error || 'The build failed.'}`);
+          } else { $('terminalStatus').textContent = 'CONNECTION LOST'; appendLog('Build log connection was interrupted.'); }
+        } catch (_) { $('terminalStatus').textContent = 'CONNECTION LOST'; appendLog('Could not reconnect to the build status endpoint.'); }
+        button.disabled = false; button.innerHTML = 'Build Android APK <span aria-hidden="true">→</span>';
+      };
+    } catch (error) {
+      appendLog(`BUILD_ERROR: ${error.message}`); $('terminalStatus').textContent = 'FAILED';
+      button.disabled = false; button.innerHTML = 'Build Android APK <span aria-hidden="true">→</span>';
+    }
+  }
+  $('go').addEventListener('click', build);
+  $('previewName').textContent = $('appName').value; $('showStatusBarAndroid').checked=$('showStatusBar').checked; $('releaseBuild').disabled=$('buildTarget').value==='aab';
+  $('packageName').value = packageFromName($('appName').value);
+})();
+</script>
+</body>
+</html>

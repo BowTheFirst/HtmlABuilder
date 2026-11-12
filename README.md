@@ -1,39 +1,35 @@
-# Forge Studio — HTML to APK
+FORGE STUDIO v5 — UPDATE NOTES
 
-A small web workspace that packages HTML projects into Android APKs with Nitron.
+FILES
+- HtmlABuilder.html: updated tablet-first builder interface.
+- index.js: updated Express build server. Replace the existing index.js too; the new Android controls require this server update.
 
-## Run locally
+WHAT CHANGED
+- The builder stays inside the available viewport. The page itself does not scroll; the active setup panel, build activity and saved-project list have their own contained scrolling areas.
+- Added an Android setup stage with 45 selectable permission entries across network, camera/microphone/media, location/notifications, contacts/calendar/phone, Bluetooth/nearby devices, sensors and advanced access.
+- Permissions are written into nitron.config.json for the Android build. INTERNET remains included automatically.
+- Added app version and orientation settings.
+- Added APK and Google Play AAB targets. AAB automatically requires a signed release build.
+- Added release-key creation. The server generates a JKS keystore in a temporary location and streams it to the browser; it does not keep a shared signing key. Select the downloaded keystore file and enter its password when making a signed build. The uploaded key is cleaned up with the other temporary build uploads.
+- Successfully built projects are automatically saved in the browser's local IndexedDB library; the existing My projects tab can reopen them with their settings and source files.
+- Fixed launcher icon upload naming so the backend places it at the path configured in Nitron.
 
-Requirements: Node.js 20+, Java 17+, and the Nitron CLI.
+DEPLOYMENT
+1. Replace BOTH existing files with HtmlABuilder.html and index.js from this update.
+2. Keep your existing package.json / dependencies. No new npm dependency was added by this update.
+3. Ensure Node.js 20+, Java 17+ (a full JDK), and the existing Nitron CLI are installed and available to the server. `keytool` must be on PATH.
+4. Deploy the updated server over HTTPS. Release-key passwords and keystore files are sent to the build server for the duration of key creation/building; do not use this feature over plain HTTP.
+5. Ensure the server has persistent build storage if you need build artifacts to survive redeploys. Keystore files are intentionally not retained on the server; keep your own secure backup.
 
-```bash
-npm install
-npm install -g nitron
-npm start
-```
+SIGNING / GOOGLE PLAY
+- Create a release key once and securely back up the downloaded .keystore file. Do not create a replacement key for an app already published with the old key.
+- For each release, select that same keystore and enter its password.
+- Choose APK for device testing, or AAB for Google Play Console upload. AAB requires the full JDK and release signing.
+- Increase the version for every update. Keep the same package identifier and signing key for updates to an existing app.
+- Google Play may restrict certain sensitive permissions (for example SMS, call-related, all-files and package-install permissions). Selecting a permission only declares it in the Android app; it does not guarantee Play approval or automatically make app code request/grant it at runtime. The app must implement the appropriate Android/Nitron permission request flow when it actually uses a protected feature.
 
-Open `http://localhost:3000`.
+SAVED PROJECTS
+The My projects library remains local to the browser/device (IndexedDB), not cloud-synced. Successful builds are now auto-saved. Keep a separate copy of source files; clearing browser storage can remove the local project library.
 
-## Deploy with Docker / Render
-
-Use the included `Dockerfile`. The container installs Node.js, Java 17, and Nitron, then starts the Express build server on port `3000`.
-
-## Project input
-
-- Upload a single HTML file, a group of project files, a selected folder, or one ZIP archive.
-- Keep relative paths for CSS, JavaScript, fonts, and images inside the project.
-- A single HTML file is normalized to `index.html`. For a multi-page project, include a root `index.html` or a clearly named `index.html` inside the project folder.
-- A custom icon is exported as a 512 × 512 PNG. Transparency is preserved.
-
-## Background removal
-
-Background removal runs in the browser using the pinned `@imgly/background-removal` 1.7.0 ESM build. The first use downloads its quantized AI model from the IMG.LY asset CDN; subsequent runs can use the browser cache. The server also sends the cross-origin isolation headers recommended for threaded WebAssembly performance. The Google Fonts stylesheet is requested with CORS so it remains compatible with those headers. The selected image itself is processed locally in the browser and is not uploaded to the build server unless it is chosen as the launcher icon.
-
-## Build behavior
-
-- The Android display name and package ID are written into `nitron.config.json` for every build.
-- The server resolves the real HTML entry path instead of assuming every uploaded ZIP contains a root `index.html`.
-- Build logs are buffered so early messages are not lost if the browser connects after the build starts.
-- The downloaded APK uses the app name as its filename; Nitron's internal output remains `dist/app.apk`.
-
-Build artifacts are stored in the server's `builds/` directory. On hosts with ephemeral storage, artifacts are not guaranteed to survive a redeploy or instance replacement; download completed APKs promptly or attach persistent storage.
+IMPORTANT
+This update changes both the frontend and backend. Replacing only the HTML file will show the new controls but will not apply permissions, AAB targets or release signing. The backend must be redeployed with the matching index.js.
