@@ -372,7 +372,6 @@ app.post('/api/jobs', upload.array('files'), async (req, res) => {
     fs.mkdirSync(pluginDir, { recursive: true });
     const permissionPlugin = `package com.forge.permission;
 
-import android.app.Activity;
 import android.app.AlarmManager;
 import android.app.AppOpsManager;
 import android.app.NotificationManager;
@@ -388,10 +387,6 @@ import android.os.Environment;
 import android.os.PowerManager;
 import android.os.Process;
 import android.provider.Settings;
-import android.view.View;
-import android.view.Window;
-import android.view.WindowInsets;
-import android.view.WindowInsetsController;
 import com.nicron.webview.NitronMethod;
 import com.nicron.webview.NitronPlugin;
 import com.nicron.webview.PluginCall;
@@ -713,47 +708,6 @@ public class PermissionPlugin extends NitronPlugin {
         }
     }
 
-    // Controls BOTH Android system bars. Immersive-sticky lets users reveal
-    // them temporarily with an edge swipe; Android hides them again afterwards.
-    @NitronMethod
-    public void setSystemBarsVisible(PluginCall call) throws Exception {
-        boolean visible = call.getBoolean("visible", true);
-        Context context = getContext();
-        if (!(context instanceof Activity)) {
-            call.reject("Cannot access the Android Activity to control system bars.");
-            return;
-        }
-        Activity activity = (Activity) context;
-        activity.runOnUiThread(() -> {
-            try {
-                Window window = activity.getWindow();
-                if (Build.VERSION.SDK_INT >= 30) {
-                    WindowInsetsController controller = window.getInsetsController();
-                    if (controller != null) {
-                        controller.setSystemBarsBehavior(
-                            WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE);
-                        int bars = WindowInsets.Type.statusBars() | WindowInsets.Type.navigationBars();
-                        if (visible) controller.show(bars);
-                        else controller.hide(bars);
-                    }
-                } else {
-                    int flags = View.SYSTEM_UI_FLAG_LAYOUT_STABLE;
-                    if (!visible) {
-                        flags |= View.SYSTEM_UI_FLAG_FULLSCREEN
-                            | View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
-                            | View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY;
-                    }
-                    window.getDecorView().setSystemUiVisibility(flags);
-                }
-                JSONObject result = new JSONObject();
-                result.put("visible", visible);
-                result.put("mode", visible ? "shown" : "immersive-sticky");
-                call.resolve(result);
-            } catch (Exception error) {
-                call.reject("Could not change Android system-bar visibility: " + error.getMessage());
-            }
-        });
-    }
 }`;
     const autoAddedPermissions = config._autoAddedPermissions || [];
     const autoAddedJava = `java.util.Arrays.asList(${autoAddedPermissions.map(p => JSON.stringify('android.permission.' + p)).join(',')})`;
@@ -768,11 +722,22 @@ public class PermissionPlugin extends NitronPlugin {
     const nativeThemeExpression = "value==='system'?((window.ForgeAndroidTheme&&window.ForgeAndroidTheme.current)|| (matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light')):value";
     if (appHtml.includes(mediaThemeExpression)) appHtml = appHtml.replace(mediaThemeExpression, nativeThemeExpression);
     const startupPermissionScript = `<script id="forge-android-webview-mic-shim">(function(){
-      // Keep the native status and navigation bars in sync with Forge's setting.
-      // The native method uses immersive-sticky so an edge swipe can reveal them.
+      // Keep both Android system bars in sync with Forge's setting. The call is
+      // handled by Nitron MainActivity itself, not by a plugin Context cast.
       var forgeShowSystemBars = ${config.statusBar ? 'true' : 'false'};
       function bridge(){return (window.Nitron&&window.Nitron.plugins)?window.Nitron:((window.NitronRuntime&&window.NitronRuntime.plugins)?window.NitronRuntime:window.Nitron);}
-      function applySystemBars(){var b=bridge(),p=b&&b.plugins&&b.plugins.Permission;if(!p||!p.setSystemBarsVisible)return Promise.resolve(null);return p.setSystemBarsVisible({visible:forgeShowSystemBars}).catch(function(error){console.warn('[Forge] Could not apply Android system-bar setting:',error&&error.message||error);try{window.dispatchEvent(new CustomEvent('forge:system-bars-error',{detail:{message:error&&error.message||String(error)}}));}catch(e){}return null;});}
+      function applySystemBars(){
+        var b=bridge();
+        if(!b||typeof b.setSystemBarsVisible!=='function'){
+          var missing=new Error('Native system-bar control is unavailable. Rebuild using the updated Forge Studio image.');
+          console.warn('[Forge] Could not apply Android system-bar setting:',missing.message);
+          try{window.dispatchEvent(new CustomEvent('forge:system-bars-error',{detail:{message:missing.message}}));}catch(e){}
+          return Promise.resolve(null);
+        }
+        try{b.setSystemBarsVisible(forgeShowSystemBars);return Promise.resolve({visible:forgeShowSystemBars});}
+        catch(error){console.warn('[Forge] Could not apply Android system-bar setting:',error&&error.message||error);try{window.dispatchEvent(new CustomEvent('forge:system-bars-error',{detail:{message:error&&error.message||String(error)}}));}catch(e){}return Promise.resolve(null);}
+      }
+      window.ForgeApplySystemBars=applySystemBars;
       // Some Nitron templates omit WebChromeClient.onPermissionRequest handling.
       // This shim ensures a getUserMedia({audio:true}) call triggers the native
       // RECORD_AUDIO prompt when the plugin bridge is present, matching HTML2APK.
@@ -804,6 +769,7 @@ public class PermissionPlugin extends NitronPlugin {
     })();</script><script id="forge-android-permission-startup">(function(){
       var permissionNames={SYSTEM_ALERT_WINDOW:'Display over other apps',MANAGE_EXTERNAL_STORAGE:'Manage all files',SCHEDULE_EXACT_ALARM:'Exact alarms',USE_EXACT_ALARM:'Exact alarms',REQUEST_IGNORE_BATTERY_OPTIMIZATIONS:'Battery optimization exemption',REQUEST_INSTALL_PACKAGES:'Install unknown apps',WRITE_SETTINGS:'Modify system settings',ACCESS_NOTIFICATION_POLICY:'Do Not Disturb access',PACKAGE_USAGE_STATS:'Usage access',ACCESS_BACKGROUND_LOCATION:'Background location'};
       function bridge(){return (window.Nitron&&window.Nitron.plugins)?window.Nitron:((window.NitronRuntime&&window.NitronRuntime.plugins)?window.NitronRuntime:window.Nitron);}
+      function applySystemBars(){return typeof window.ForgeApplySystemBars==='function'?window.ForgeApplySystemBars():Promise.resolve(null);}
       function api(){var b=bridge();return b&&b.plugins&&b.plugins.Permission;}
       function dispatch(name,detail){try{window.dispatchEvent(new CustomEvent(name,{detail:detail}));}catch(e){}}
       function showSettingsHelp(items,denied,restricted){
@@ -856,7 +822,7 @@ public class PermissionPlugin extends NitronPlugin {
     }
     sendLog(id, `Starting ${target.toUpperCase()} build…`);
     sendLog(id, `Permissions declared: ${config.permissions.length} (runtime prompts handled by native Permission plugin).`);
-    sendLog(id, `Android system bars: ${config.statusBar ? 'shown' : 'hidden with immersive-sticky navigation'}.`);
+    sendLog(id, `Android system bars: ${config.statusBar ? 'shown' : 'hidden with immersive-sticky mode'}.`);
     sendLog(id, 'Plugin packaging is mandatory: build will be rejected unless Nitron embeds the plugin DEX and assets/nitron-plugins.json.');
     const env = { ...process.env };
     if (release) env.NITRON_KEYSTORE_PASSWORD = password;

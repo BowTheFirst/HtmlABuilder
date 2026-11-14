@@ -1,33 +1,27 @@
-# Forge Studio – Android system bars, theme bridge, icon crop, and permissions
+# Forge Studio – native Android system bars, theme bridge, icon crop, and permissions
 
-Deploy `index.js`, `HtmlABuilder.html`, `package.json`, and `Dockerfile` together, then rebuild and redeploy the server image before generating new APKs. Existing installed APKs do not receive these changes; build and install a fresh APK.
+Deploy `index.js`, `HtmlABuilder.html`, `package.json`, `Dockerfile`, and the complete `scripts/` directory together. **Rebuild and redeploy the Docker image** before generating a new APK. Restarting only the Node server is not enough because the native Nitron template is compiled into the Docker image. Existing installed APKs do not change; generate and install a fresh APK.
 
 ## Patches included
 
-- **Android system bars:** the visibility toggle controls both the status bar and bottom navigation bar. The native Permission plugin applies immersive-sticky mode when hidden; users can temporarily reveal the bars with an edge swipe. The setting is reapplied when the app regains focus or returns to the foreground. The plugin reports a clear error if the Android Activity cannot be reached.
-- **System theme bridge:** removes the app-specific `Written Magic.theme` check. The native Android configuration is exposed through `window.ForgeAndroidTheme`, `forge:system-theme`, `data-forge-system-theme`, and `color-scheme`. JavaScript frameworks that read `matchMedia('(prefers-color-scheme: dark)')` receive change events when Android's theme changes. CSS-only `@media (prefers-color-scheme: ...)` rules still depend on the WebView's own native color-scheme behavior; apps should use the event/attribute or set a DayNight host theme for guaranteed CSS media-query behavior.
-- **Launcher icon crop:** dragging now applies pointer deltas instead of recalculating an absolute position, removing the jump/snap behavior. Preview movement is normalized to a 200×200 coordinate space so it remains aligned at responsive preview sizes and with the 512×512 PNG export.
-- **Permissions:** retains the existing Nitron native permission plugin and startup permission flow.
+- **Android system bars:** the “Show Android system bars” setting controls both the top status bar and bottom navigation bar. The Docker build patches Nitron's actual `MainActivity.java` with a trusted `Nitron.setSystemBarsVisible(boolean)` native bridge. Hidden mode uses Android immersive-sticky behavior, allowing a temporary edge-swipe reveal. The Activity reapplies the selected state in `onResume()` and `onWindowFocusChanged()`. This does not depend on casting a generic plugin `Context` to `Activity`.
+- **System-bar JavaScript flow:** the generated startup shim calls the native MainActivity bridge. The system-bar function is explicitly shared with the permission-startup script, avoiding a separate-IIFE scope error that could otherwise stop startup work.
+- **System theme bridge:** keeps the Android system theme available through `window.ForgeAndroidTheme` and the `forge:system-theme` event. The host Activity selects a matching light/dark theme before creating WebView, and the HTML injection adds the standard `color-scheme` metadata.
+- **Launcher icon crop:** retains the adaptive-icon safe-zone patch and the preview/export alignment check.
+- **Permissions:** retains the existing native Permission plugin for runtime permission requests. System-bar control itself no longer relies on that plugin.
 
-## Build and verification
+## Docker build behavior
 
-Run `npm run check` to syntax-check the Node server. The Dockerfile builds the pinned Nitron 3.2.0 source with native-plugin support. A successful server syntax check does not prove a device APK build; compile the native plugin in the Docker build and install a fresh APK on a physical Android device to verify status/navigation-bar behavior, theme switching, and icon positioning.
+The Dockerfile pins the plugin-capable Nitron 3.2.0 source and applies these patches before compiling Nitron's CLI and Android template:
 
+1. `scripts/patch-nitron-theme.js`
+2. `scripts/patch-nitron-system-bars.js`
+3. `scripts/patch-nitron-icon.js`
 
-## Android system theme compatibility patch
+After `node scripts/prepare-template.js`, the Docker build checks that the rebuilt `template/base.apk` contains the native system-bar bridge. A missing patch causes the image build to fail rather than silently producing an APK without the feature.
 
-The Docker build patches the pinned Nitron `template-src/base/MainActivity.java`
-before rebuilding `template/base.apk`. The native Activity selects a platform
-Material light or dark theme from Android's current `uiMode` before creating the
-WebView. This sets the host theme's `isLightTheme` attribute correctly, which is
-what Android WebView uses to evaluate `prefers-color-scheme`. The HTML injection
-also adds `<meta name="color-scheme" content="dark light">` before the app's scripts
-so WebView's default web-theme darkening strategy can honor CSS media queries.
+## Verification
 
-The previous Forge-only exact-string rewrite of one WrittenMagic theme expression
-has been removed. Theme behavior is now driven by the native Android theme and
-standard WebView behavior, not by matching one application's minified JavaScript.
+Run `npm run check` to syntax-check the Node server. The system-bar patch script can be syntax-checked with `node --check scripts/patch-nitron-system-bars.js`. The full Docker build compiles the patched Java template and verifies its DEX. A physical-device test is still required to confirm behavior on the target Android version and navigation mode.
 
-The Docker image must be rebuilt and redeployed for the Nitron base APK patch to
-take effect. Existing APKs are unchanged. A syntax check does not substitute for
-installing and testing a newly built APK while toggling Android's system theme.
+After deploying the rebuilt image, create a new APK with **Show Android system bars** unchecked. Install that new APK and confirm both bars are hidden on launch, briefly appear on an edge swipe, and hide again. Check the enabled setting too; it should show both bars.
