@@ -124,7 +124,7 @@
           <div class="field"><label for="appName">Application name</label><input id="appName" type="text" value="My App" maxlength="48" autocomplete="off"><div class="field-hint">This is the name displayed beneath your app icon on Android.</div></div>
           <div class="field"><label for="packageName">Package identifier</label><input id="packageName" type="text" value="com.forgeapps.myapp" spellcheck="false" autocomplete="off"><div class="field-hint">Keep this identifier unchanged when updating an app you've already published.</div></div>
           <div class="saved-tools"><button class="secondary-btn" type="button" id="saveProjectBtn">Save project settings + files</button><span class="field-hint" id="saveHint">Keep this app ready to rebuild later.</span></div>
-<div class="setting-row"><span>Show Android status bar</span><input id="showStatusBar" type="checkbox" checked aria-label="Show Android status bar"></div>
+<div class="setting-row"><span>Show Android system bars</span><input id="showStatusBar" type="checkbox" checked aria-label="Show Android status and navigation bars"></div><div class="field-hint">Controls the top status bar and bottom navigation bar together. Turn off for immersive full-screen apps.</div>
         </section>
 
         <section class="card stage-card" id="iconCard">
@@ -154,7 +154,7 @@
             <div class="field"><label for="appVersion">Version</label><input id="appVersion" type="text" value="1.0.0" maxlength="24" autocomplete="off"><div class="field-hint">Increase this for every Play Store update.</div></div>
             <div class="field"><label for="orientation">Orientation</label><select id="orientation" class="forge-select"><option value="portrait">Portrait</option><option value="landscape">Landscape</option><option value="auto">Auto</option></select></div>
           </div>
-          <div class="setting-row"><span>Show Android status bar</span><input id="showStatusBarAndroid" type="checkbox" checked aria-label="Show Android status bar"></div>
+          <div class="setting-row"><span>Show Android system bars</span><input id="showStatusBarAndroid" type="checkbox" checked aria-label="Show Android status and navigation bars"></div><div class="field-hint">When disabled, both bars hide. Users can still reveal them temporarily with an edge swipe.</div>
           <div class="permission-toolbar"><div><strong>App permissions</strong><p>Select only features your app needs. Android still asks users at runtime for sensitive permissions.</p></div><div class="permission-count" id="permissionCount">2 selected</div></div><div class="field-hint">Forge adds required Android compatibility permissions automatically. Special access opens the relevant Android Settings page; it cannot be granted by a normal pop-up.</div>
           <div class="permission-groups" id="permissionGroups">
             <details open><summary>Core & network</summary><div class="permission-grid">

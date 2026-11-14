@@ -372,6 +372,7 @@ app.post('/api/jobs', upload.array('files'), async (req, res) => {
     fs.mkdirSync(pluginDir, { recursive: true });
     const permissionPlugin = `package com.forge.permission;
 
+import android.app.Activity;
 import android.app.AlarmManager;
 import android.app.AppOpsManager;
 import android.app.NotificationManager;
@@ -387,6 +388,10 @@ import android.os.Environment;
 import android.os.PowerManager;
 import android.os.Process;
 import android.provider.Settings;
+import android.view.View;
+import android.view.Window;
+import android.view.WindowInsets;
+import android.view.WindowInsetsController;
 import com.nicron.webview.NitronMethod;
 import com.nicron.webview.NitronPlugin;
 import com.nicron.webview.PluginCall;
@@ -707,6 +712,48 @@ public class PermissionPlugin extends NitronPlugin {
             call.reject(e.getMessage());
         }
     }
+
+    // Controls BOTH Android system bars. Immersive-sticky lets users reveal
+    // them temporarily with an edge swipe; Android hides them again afterwards.
+    @NitronMethod
+    public void setSystemBarsVisible(PluginCall call) throws Exception {
+        boolean visible = call.getBoolean("visible", true);
+        Context context = getContext();
+        if (!(context instanceof Activity)) {
+            call.reject("Cannot access the Android Activity to control system bars.");
+            return;
+        }
+        Activity activity = (Activity) context;
+        activity.runOnUiThread(() -> {
+            try {
+                Window window = activity.getWindow();
+                if (Build.VERSION.SDK_INT >= 30) {
+                    WindowInsetsController controller = window.getInsetsController();
+                    if (controller != null) {
+                        controller.setSystemBarsBehavior(
+                            WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE);
+                        int bars = WindowInsets.Type.statusBars() | WindowInsets.Type.navigationBars();
+                        if (visible) controller.show(bars);
+                        else controller.hide(bars);
+                    }
+                } else {
+                    int flags = View.SYSTEM_UI_FLAG_LAYOUT_STABLE;
+                    if (!visible) {
+                        flags |= View.SYSTEM_UI_FLAG_FULLSCREEN
+                            | View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
+                            | View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY;
+                    }
+                    window.getDecorView().setSystemUiVisibility(flags);
+                }
+                JSONObject result = new JSONObject();
+                result.put("visible", visible);
+                result.put("mode", visible ? "shown" : "immersive-sticky");
+                call.resolve(result);
+            } catch (Exception error) {
+                call.reject("Could not change Android system-bar visibility: " + error.getMessage());
+            }
+        });
+    }
 }`;
     const autoAddedPermissions = config._autoAddedPermissions || [];
     const autoAddedJava = `java.util.Arrays.asList(${autoAddedPermissions.map(p => JSON.stringify('android.permission.' + p)).join(',')})`;
@@ -721,10 +768,14 @@ public class PermissionPlugin extends NitronPlugin {
     const nativeThemeExpression = "value==='system'?((window.ForgeAndroidTheme&&window.ForgeAndroidTheme.current)|| (matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light')):value";
     if (appHtml.includes(mediaThemeExpression)) appHtml = appHtml.replace(mediaThemeExpression, nativeThemeExpression);
     const startupPermissionScript = `<script id="forge-android-webview-mic-shim">(function(){
+      // Keep the native status and navigation bars in sync with Forge's setting.
+      // The native method uses immersive-sticky so an edge swipe can reveal them.
+      var forgeShowSystemBars = ${config.statusBar ? 'true' : 'false'};
+      function bridge(){return (window.Nitron&&window.Nitron.plugins)?window.Nitron:((window.NitronRuntime&&window.NitronRuntime.plugins)?window.NitronRuntime:window.Nitron);}
+      function applySystemBars(){var b=bridge(),p=b&&b.plugins&&b.plugins.Permission;if(!p||!p.setSystemBarsVisible)return Promise.resolve(null);return p.setSystemBarsVisible({visible:forgeShowSystemBars}).catch(function(error){console.warn('[Forge] Could not apply Android system-bar setting:',error&&error.message||error);try{window.dispatchEvent(new CustomEvent('forge:system-bars-error',{detail:{message:error&&error.message||String(error)}}));}catch(e){}return null;});}
       // Some Nitron templates omit WebChromeClient.onPermissionRequest handling.
       // This shim ensures a getUserMedia({audio:true}) call triggers the native
       // RECORD_AUDIO prompt when the plugin bridge is present, matching HTML2APK.
-      function bridge(){return (window.Nitron&&window.Nitron.plugins)?window.Nitron:((window.NitronRuntime&&window.NitronRuntime.plugins)?window.NitronRuntime:window.Nitron);}
       function permApi(){var b=bridge();return b&&b.plugins&&b.plugins.Permission;}
       var origGUM=null;
       if(navigator.mediaDevices&&typeof navigator.mediaDevices.getUserMedia==='function'){
@@ -776,10 +827,11 @@ public class PermissionPlugin extends NitronPlugin {
         return result;
       }).catch(function(error){dispatch('forge:system-theme-error',{message:error&&error.message||String(error)});return null;});}
       function start(){var p=api();if(!p||!p.requestStartupPermissions){if(window.Nitron||window.NitronRuntime){var message='Forge native Permission plugin is missing. Rebuild this APK using the updated Forge Studio server.';console.warn('[Forge]',message);dispatch('forge:permissions-error',{message:message});dispatch('forge:permissions-manual-required',{permissions:['RECORD_AUDIO','CAMERA'],message:'Microphone and camera access must be enabled manually in Android Settings. Open Settings → Apps → this app → Permissions.'});}return;} p.requestStartupPermissions().then(function(result){dispatch('forge:permissions-result',result);return refresh();}).catch(function(error){console.warn('[Forge] Android permission request failed:',error&&error.message||error);dispatch('forge:permissions-error',{message:error&&error.message||String(error)});refresh();});}
-      function boot(){start();refreshSystemTheme();}
+      function boot(){applySystemBars();start();refreshSystemTheme();}
       if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',boot,{once:true});else boot();
-      document.addEventListener('visibilitychange',function(){if(!document.hidden){refresh();refreshSystemTheme();}});
-      window.addEventListener('focus',function(){refresh();refreshSystemTheme();});
+      document.addEventListener('visibilitychange',function(){if(!document.hidden){applySystemBars();refresh();refreshSystemTheme();}});
+      window.addEventListener('focus',function(){applySystemBars();refresh();refreshSystemTheme();});
+      window.addEventListener('pageshow',applySystemBars);
       window.ForgeAndroidPermissions={refresh:refresh,request:function(permission){var p=api();if(!p)return Promise.reject(new Error('Forge Android permission bridge is unavailable'));return p.requestRuntimePermission({permission:permission});},openSettings:function(permission){var p=api();if(!p)return Promise.reject(new Error('Forge Android permission bridge is unavailable'));return p.openPermissionSettings({permission:permission});}};
     })();</script>`;
     if (!appHtml.includes('forge-android-permission-startup')) {
@@ -804,6 +856,7 @@ public class PermissionPlugin extends NitronPlugin {
     }
     sendLog(id, `Starting ${target.toUpperCase()} build…`);
     sendLog(id, `Permissions declared: ${config.permissions.length} (runtime prompts handled by native Permission plugin).`);
+    sendLog(id, `Android system bars: ${config.statusBar ? 'shown' : 'hidden with immersive-sticky navigation'}.`);
     sendLog(id, 'Plugin packaging is mandatory: build will be rejected unless Nitron embeds the plugin DEX and assets/nitron-plugins.json.');
     const env = { ...process.env };
     if (release) env.NITRON_KEYSTORE_PASSWORD = password;
