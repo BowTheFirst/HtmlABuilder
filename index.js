@@ -377,9 +377,6 @@ import android.app.AppOpsManager;
 import android.app.NotificationManager;
 import android.content.Context;
 import android.content.Intent;
-import android.app.Activity;
-import android.content.ContextWrapper;
-import android.view.View;
 import android.content.pm.PackageInfo;
 import android.content.pm.PackageManager;
 import android.content.pm.PermissionInfo;
@@ -419,53 +416,6 @@ public class PermissionPlugin extends NitronPlugin {
         result.put("uiMode", mode);
         result.put("source", "android-configuration");
         call.resolve(result);
-    }
-
-    private Activity findActivity(Context context) {
-        Context current = context;
-        while (current instanceof ContextWrapper) {
-            if (current instanceof Activity) return (Activity) current;
-            Context next = ((ContextWrapper) current).getBaseContext();
-            if (next == current) break;
-            current = next;
-        }
-        return current instanceof Activity ? (Activity) current : null;
-    }
-
-    @NitronMethod
-    public void setSystemBars(PluginCall call) throws Exception {
-        final boolean visible = call.getBoolean("visible", true);
-        final Activity activity = findActivity(getContext());
-        if (activity == null) {
-            call.reject("Could not access the Android activity to update system bars.");
-            return;
-        }
-        runOnUiThread(() -> {
-            try {
-                View decor = activity.getWindow().getDecorView();
-                int flags = decor.getSystemUiVisibility();
-                int systemBarFlags = View.SYSTEM_UI_FLAG_FULLSCREEN
-                    | View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
-                    | View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
-                    | View.SYSTEM_UI_FLAG_LAYOUT_STABLE
-                    | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
-                    | View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION;
-                flags &= ~systemBarFlags;
-                if (!visible) {
-                    flags |= View.SYSTEM_UI_FLAG_FULLSCREEN
-                        | View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
-                        | View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY;
-                }
-                decor.setSystemUiVisibility(flags);
-                JSONObject result = new JSONObject();
-                result.put("visible", visible);
-                result.put("statusBarVisible", visible);
-                result.put("navigationBarVisible", visible);
-                call.resolve(result);
-            } catch (Exception error) {
-                call.reject("Unable to update Android system bars: " + error.getMessage());
-            }
-        });
     }
     private boolean isAutoAdded(String permission) { return __AUTO_ADDED_PERMISSION_LIST__.contains(permission); }
     private boolean declared(String permission) {
@@ -767,29 +717,9 @@ public class PermissionPlugin extends NitronPlugin {
     sendLog(id, `Plugin config: ${JSON.stringify(config.plugins)}`);
     const appEntry = path.join(workDir, 'index.html');
     let appHtml = fs.readFileSync(appEntry, 'utf8');
-    const themeBridgeBootstrap = `<script id="forge-system-theme-bootstrap">(function(){
-      if(window.__forgeColorSchemeBridgeInstalled||!window.matchMedia)return;
-      window.__forgeColorSchemeBridgeInstalled=true;
-      var nativeMatchMedia=window.matchMedia.bind(window),currentTheme=null,queries=[];
-      function isDarkQuery(q){return /prefers-color-scheme\s*:\s*dark/i.test(q);}
-      function isLightQuery(q){return /prefers-color-scheme\s*:\s*light/i.test(q);}
-      function makeQuery(query){
-        var native=nativeMatchMedia(query),listeners=[],lastMatch=native.matches;
-        var item={media:query,onchange:null,addListener:function(fn){if(fn&&listeners.indexOf(fn)<0)listeners.push(fn);},removeListener:function(fn){listeners=listeners.filter(function(x){return x!==fn;});},addEventListener:function(type,fn){if(type==='change')this.addListener(fn);},removeEventListener:function(type,fn){if(type==='change')this.removeListener(fn);},dispatchEvent:function(event){listeners.slice().forEach(function(fn){try{fn.call(item,event);}catch(e){}});if(typeof item.onchange==='function')try{item.onchange.call(item,event);}catch(e){}return true;}};
-        Object.defineProperty(item,'matches',{enumerable:true,get:function(){if(currentTheme==='dark'&&isDarkQuery(query))return true;if(currentTheme==='light'&&isDarkQuery(query))return false;if(currentTheme==='light'&&isLightQuery(query))return true;if(currentTheme==='dark'&&isLightQuery(query))return false;return native.matches;}});
-        item.__forgeUpdate=function(theme){if(!isDarkQuery(query)&&!isLightQuery(query))return;var after=isDarkQuery(query)?theme==='dark':theme==='light';if(lastMatch!==after){lastMatch=after;var event;try{event=new Event('change');}catch(e){event={type:'change'};}try{Object.defineProperty(event,'matches',{value:after});Object.defineProperty(event,'media',{value:query});}catch(e){}item.dispatchEvent(event);}};
-        queries.push(item);return item;
-      }
-      window.matchMedia=function(query){query=String(query);return isDarkQuery(query)||isLightQuery(query)?makeQuery(query):nativeMatchMedia(query);};
-      window.ForgeApplySystemTheme=function(theme){currentTheme=theme==='dark'?'dark':'light';queries.forEach(function(item){item.__forgeUpdate(currentTheme);});};
-    })();</script>`;
-    const headOpen = appHtml.match(/<head\b[^>]*>/i);
-    if (headOpen) appHtml = appHtml.slice(0, headOpen.index + headOpen[0].length) + themeBridgeBootstrap + appHtml.slice(headOpen.index + headOpen[0].length);
-    else appHtml = themeBridgeBootstrap + appHtml;
-    // Do not rewrite app-specific theme expressions. The rebuilt Nitron Activity
-    // exposes Android's actual night mode to WebView's native
-    // prefers-color-scheme implementation. The bridge below remains available
-    // to apps that also consume window.ForgeAndroidTheme events/API.
+    const mediaThemeExpression = "value==='system'?(matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light'):value";
+    const nativeThemeExpression = "value==='system'?((window.ForgeAndroidTheme&&window.ForgeAndroidTheme.current)|| (matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light')):value";
+    if (appHtml.includes(mediaThemeExpression)) appHtml = appHtml.replace(mediaThemeExpression, nativeThemeExpression);
     const startupPermissionScript = `<script id="forge-android-webview-mic-shim">(function(){
       // Some Nitron templates omit WebChromeClient.onPermissionRequest handling.
       // This shim ensures a getUserMedia({audio:true}) call triggers the native
@@ -825,7 +755,6 @@ public class PermissionPlugin extends NitronPlugin {
       function bridge(){return (window.Nitron&&window.Nitron.plugins)?window.Nitron:((window.NitronRuntime&&window.NitronRuntime.plugins)?window.NitronRuntime:window.Nitron);}
       function api(){var b=bridge();return b&&b.plugins&&b.plugins.Permission;}
       function dispatch(name,detail){try{window.dispatchEvent(new CustomEvent(name,{detail:detail}));}catch(e){}}
-      function applySystemBars(){var p=api();if(!p||!p.setSystemBars)return Promise.resolve(null);return p.setSystemBars({visible:${config.statusBar ? 'true' : 'false'}}).catch(function(error){dispatch('forge:system-bars-error',{message:error&&error.message||String(error)});return null;});}
       function showSettingsHelp(items,denied,restricted){
         items=items||[];denied=denied||[];restricted=restricted||[];
         var oldPanel=document.getElementById('forge-permission-help');if(oldPanel)oldPanel.remove();
@@ -843,15 +772,14 @@ public class PermissionPlugin extends NitronPlugin {
         var theme=result&&result.theme==='dark'?'dark':'light';
         window.ForgeAndroidTheme=window.ForgeAndroidTheme||{};window.ForgeAndroidTheme.current=theme;window.ForgeAndroidTheme.source='android';
         dispatch('forge:system-theme',{theme:theme,isDark:theme==='dark'});
-        try{document.documentElement.style.colorScheme=theme;document.documentElement.setAttribute('data-forge-system-theme',theme);}catch(e){}
-        try{if(typeof window.ForgeApplySystemTheme==='function')window.ForgeApplySystemTheme(theme);}catch(e){}
+        try{if(localStorage.getItem('Written Magic.theme')==='system'&&typeof window.applyTheme==='function')window.applyTheme('system');}catch(e){}
         return result;
       }).catch(function(error){dispatch('forge:system-theme-error',{message:error&&error.message||String(error)});return null;});}
       function start(){var p=api();if(!p||!p.requestStartupPermissions){if(window.Nitron||window.NitronRuntime){var message='Forge native Permission plugin is missing. Rebuild this APK using the updated Forge Studio server.';console.warn('[Forge]',message);dispatch('forge:permissions-error',{message:message});dispatch('forge:permissions-manual-required',{permissions:['RECORD_AUDIO','CAMERA'],message:'Microphone and camera access must be enabled manually in Android Settings. Open Settings → Apps → this app → Permissions.'});}return;} p.requestStartupPermissions().then(function(result){dispatch('forge:permissions-result',result);return refresh();}).catch(function(error){console.warn('[Forge] Android permission request failed:',error&&error.message||error);dispatch('forge:permissions-error',{message:error&&error.message||String(error)});refresh();});}
-      function boot(){start();refreshSystemTheme();applySystemBars();}
+      function boot(){start();refreshSystemTheme();}
       if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',boot,{once:true});else boot();
-      document.addEventListener('visibilitychange',function(){if(!document.hidden){refresh();refreshSystemTheme();applySystemBars();}});
-      window.addEventListener('focus',function(){refresh();refreshSystemTheme();applySystemBars();});
+      document.addEventListener('visibilitychange',function(){if(!document.hidden){refresh();refreshSystemTheme();}});
+      window.addEventListener('focus',function(){refresh();refreshSystemTheme();});
       window.ForgeAndroidPermissions={refresh:refresh,request:function(permission){var p=api();if(!p)return Promise.reject(new Error('Forge Android permission bridge is unavailable'));return p.requestRuntimePermission({permission:permission});},openSettings:function(permission){var p=api();if(!p)return Promise.reject(new Error('Forge Android permission bridge is unavailable'));return p.openPermissionSettings({permission:permission});}};
     })();</script>`;
     if (!appHtml.includes('forge-android-permission-startup')) {
@@ -965,5 +893,5 @@ app.get('/api/jobs/:id/artifact', (req, res) => {
   res.download(artifact, `forge-app.${ext}`);
 });
 app.get('/api/jobs/:id/apk', (req, res) => res.redirect(302, `/api/jobs/${encodeURIComponent(req.params.id)}/artifact`));
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`Forge Studio build server listening on ${PORT}`));
+const PORT = Number(process.env.PORT) || 3000;
+app.listen(PORT, '0.0.0.0', () => console.log(`Forge Studio build server listening on 0.0.0.0:${PORT}`));
