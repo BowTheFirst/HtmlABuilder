@@ -328,19 +328,33 @@ app.post('/api/jobs', upload.array('files'), async (req, res) => {
       sendLog(id, `Project ZIP downloaded (${formatBytes(downloadedZip.size)}).`);
     }
     if (sourceMode === 'live_url') {
-      // A live-website app is expected to keep the selected site and its
-      // legitimate redirect chain inside this WebView. Nitron's "browser"
-      // external-link mode can hand a redirect to the system browser and leave
-      // this local wrapper visible, so explicitly use in-app navigation here.
-      config.webview = { ...config.webview, externalLinks: 'inapp' };
+      // A live-website app keeps the selected site and its redirect chain inside
+      // this WebView.
+      //
+      // IMPORTANT: `externalLinks` only reaches the running app once Nitron's
+      // runtime <meta-data> is emitted under <application> and read from both
+      // manifest scopes. See scripts/patch-nitron-runtime-config.js. Without
+      // that patch Nitron silently keeps externalLinks="browser", hands this
+      // redirect to the system browser, and the app stays stuck on the local
+      // "Opening website…" page below.
+      //
+      // allowedHosts is a second safety net: it whitelists the target host even
+      // if externalLinks is ever switched back to 'browser'.
+      config.webview = { ...config.webview, externalLinks: 'inapp', allowedHosts: [sourceUrl.hostname.toLowerCase()] };
+      // Match the loading screen so launch does not flash white. This only has
+      // an effect because the runtime meta-data patch also fixes nitron.splashBackground.
+      config.splashScreen = { backgroundColor: '#0b0d14' };
       const redirectUrl = JSON.stringify(sourceUrl.href).replace(/</g, '\\u003c');
       const escapedHref = sourceUrl.href.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
       const escapedTitle = config.name.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-      // Meta refresh is the non-JavaScript fallback; JS replace remains the
-      // fast path. Keep a visible link for unusual WebView/network failures.
-      const wrapper = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="refresh" content="0;url=${escapedHref}"><title>${escapedTitle}</title></head><body><p>Opening website…</p><p><a href="${escapedHref}">Continue to website</a></p><script>window.location.replace(${redirectUrl});</script></body></html>`;
+      const escapedHost = sourceUrl.hostname.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+      // Meta refresh is the non-JavaScript fallback; JS replace remains the fast
+      // path. The styled button covers unusual WebView/network failures, and the
+      // delayed note explains slow cold starts (e.g. free Render instances).
+      const wrapper = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="color-scheme" content="dark"><meta http-equiv="refresh" content="0;url=${escapedHref}"><title>${escapedTitle}</title><style>html,body{height:100%}body{margin:0;display:flex;align-items:center;justify-content:center;background:#0b0d14;color:#f4f6fb;font:16px/1.5 system-ui,-apple-system,'Segoe UI',Roboto,sans-serif}.card{width:min(420px,calc(100% - 48px));text-align:center}.spin{width:34px;height:34px;margin:0 auto 18px;border-radius:50%;border:3px solid rgba(155,140,255,.25);border-top-color:#9b8cff;animation:forge-spin .8s linear infinite}@keyframes forge-spin{to{transform:rotate(360deg)}}h1{margin:0 0 6px;font-size:19px;font-weight:700}p{margin:0;color:#8791a6;font-size:14px;word-break:break-all}#forge-slow{display:none;margin-top:16px;font-size:13px}a{display:inline-block;margin-top:22px;padding:11px 20px;border-radius:12px;background:#9b8cff;color:#171029;font-weight:650;text-decoration:none}</style></head><body><div class="card"><div class="spin"></div><h1>${escapedTitle}</h1><p>Connecting to ${escapedHost}</p><p id="forge-slow">This is taking longer than expected. The site may be waking up — tap below to continue.</p><a href="${escapedHref}">Continue to website</a></div><script>setTimeout(function(){var e=document.getElementById('forge-slow');if(e)e.style.display='block';},12000);window.location.replace(${redirectUrl});</script></body></html>`;
       fs.writeFileSync(path.join(workDir, 'index.html'), wrapper);
-      sendLog(id, 'Live website mode: in-app HTTPS navigation enabled, including redirects; an automatic meta-refresh fallback is included.');
+      sendLog(id, `Live website mode: ${sourceUrl.hostname} allowed in-app (externalLinks=inapp + allowedHosts), with a meta-refresh fallback.`);
+      sendLog(id, 'Requires the runtime meta-data patch (scripts/patch-nitron-runtime-config.js); the Docker build verifies it is in classes.dex.');
     } else {
       const zipFile = uploadedFiles.find(f => f.originalname.toLowerCase().endsWith('.zip'));
       if (zipFile) {
