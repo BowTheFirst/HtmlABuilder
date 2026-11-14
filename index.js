@@ -328,14 +328,19 @@ app.post('/api/jobs', upload.array('files'), async (req, res) => {
       sendLog(id, `Project ZIP downloaded (${formatBytes(downloadedZip.size)}).`);
     }
     if (sourceMode === 'live_url') {
-      const allowedHost = sourceUrl.hostname.replace(/^\[|\]$/g, '');
-      config.webview = { ...config.webview, externalLinks: 'browser', allowedHosts: [allowedHost] };
+      // A live-website app is expected to keep the selected site and its
+      // legitimate redirect chain inside this WebView. Nitron's "browser"
+      // external-link mode can hand a redirect to the system browser and leave
+      // this local wrapper visible, so explicitly use in-app navigation here.
+      config.webview = { ...config.webview, externalLinks: 'inapp' };
       const redirectUrl = JSON.stringify(sourceUrl.href).replace(/</g, '\\u003c');
       const escapedHref = sourceUrl.href.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
       const escapedTitle = config.name.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-      const wrapper = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escapedTitle}</title></head><body><p>Opening website…</p><p><a href="${escapedHref}">Continue to website</a></p><script>window.location.replace(${redirectUrl});</script></body></html>`;
+      // Meta refresh is the non-JavaScript fallback; JS replace remains the
+      // fast path. Keep a visible link for unusual WebView/network failures.
+      const wrapper = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="refresh" content="0;url=${escapedHref}"><title>${escapedTitle}</title></head><body><p>Opening website…</p><p><a href="${escapedHref}">Continue to website</a></p><script>window.location.replace(${redirectUrl});</script></body></html>`;
       fs.writeFileSync(path.join(workDir, 'index.html'), wrapper);
-      sendLog(id, 'Live website mode: the app opens the selected HTTPS website and requires an internet connection.');
+      sendLog(id, 'Live website mode: in-app HTTPS navigation enabled, including redirects; an automatic meta-refresh fallback is included.');
     } else {
       const zipFile = uploadedFiles.find(f => f.originalname.toLowerCase().endsWith('.zip'));
       if (zipFile) {
