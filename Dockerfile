@@ -66,16 +66,16 @@ RUN node /opt/forge-scripts/patch-nitron-theme.js /opt/nitron/template-src/base/
 # itself, then re-apply the selected state whenever the Activity resumes/focuses.
 RUN node /opt/forge-scripts/patch-nitron-system-bars.js /opt/nitron/template-src/base/MainActivity.java
 
-# Adaptive-icon safe zone: inset the 108dp foreground into the launcher's 72dp
-# masked viewport so the installed icon matches the studio preview instead of
-# arriving ~1.5x zoomed and cropped.
+# Adaptive-icon quality: keep legacy icons at 48dp but generate adaptive
+# foregrounds at the full 108dp Android layer size for every density bucket.
+# This prevents high-density launchers from upscaling undersized foregrounds.
 RUN node /opt/forge-scripts/patch-nitron-icon.js /opt/nitron/src/engines/nitronoid/aapt2-resource-builder.ts
 
 RUN cd /opt/nitron && \
     npm run build && \
     npm link && \
     test "$(nitron --version)" = "3.2.0" && \
-    grep -q forgeFgInner dist/cli.js
+    grep -q forgeAdaptiveSize dist/cli.js
 
 # Build the patched native shell. This also downloads android.jar (~65MB) and R8
 # (~16MB) into ~/.nitron/android in a layer that only invalidates when Nitron or
