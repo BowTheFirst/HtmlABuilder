@@ -42,23 +42,47 @@ RUN git clone https://github.com/ALightbolt4G/nitron.git /opt/nitron && \
 # failed command is visible in the Docker build output.
 RUN cd /opt/nitron && npm ci --include=dev --no-audit --no-fund
 
-RUN cd /opt/nitron && \
-    npm run build && \
-    npm link && \
-    test "$(nitron --version)" = "3.2.0"
+# Bring in ONLY the patch scripts first. Both patches must be applied before
+# anything is compiled: the icon patch edits TypeScript that tsup bundles into
+# dist/, and the theme patch edits Java that prepare-template.js dexes. Patching
+# after the build would silently ship an unpatched CLI and an unpatched shell.
+COPY scripts/ /opt/forge-scripts/
+
+RUN test -f /opt/forge-scripts/patch-nitron-theme.js && \
+    test -f /opt/forge-scripts/patch-nitron-icon.js
 
 # Make the template compiler locale-independent. prepare-template.js builds its
 # javac command without -encoding, so it inherits the platform charset. Pinning
 # UTF-8 here means the build no longer depends on LANG being set correctly.
 RUN cd /opt/nitron && node -e "const fs=require('fs');const f='scripts/prepare-template.js';let s=fs.readFileSync(f,'utf8');const a=\"const javacBase = ['-Xlint:-options',\";if(!s.includes(a))throw new Error('prepare-template.js: javacBase anchor not found; refusing to build with an unknown charset');if(!s.includes(\"'-encoding', 'UTF-8'\")){s=s.replace(a,\"const javacBase = ['-encoding', 'UTF-8', '-Xlint:-options',\");fs.writeFileSync(f,s);console.log('prepare-template.js: pinned javac -encoding UTF-8');}"
 
-# Warm the Android toolchain cache and prove the stock template compiles BEFORE
-# any app code is copied. This downloads android.jar (~65MB) and R8 (~16MB) into
-# ~/.nitron/android in a layer that only invalidates when Nitron itself changes,
-# so editing Forge Studio no longer re-downloads 82MB on every deploy.
+# Real system night-mode support: WebView derives prefers-color-scheme from the
+# Activity theme's isLightTheme.
+RUN node /opt/forge-scripts/patch-nitron-theme.js /opt/nitron/template-src/base/MainActivity.java
+
+# Adaptive-icon safe zone: inset the 108dp foreground into the launcher's 72dp
+# masked viewport so the installed icon matches the studio preview instead of
+# arriving ~1.5x zoomed and cropped.
+RUN node /opt/forge-scripts/patch-nitron-icon.js /opt/nitron/src/engines/nitronoid/aapt2-resource-builder.ts
+
+RUN cd /opt/nitron && \
+    npm run build && \
+    npm link && \
+    test "$(nitron --version)" = "3.2.0" && \
+    grep -q forgeFgInner dist/cli.js
+
+# Build the patched native shell. This also downloads android.jar (~65MB) and R8
+# (~16MB) into ~/.nitron/android in a layer that only invalidates when Nitron or
+# the patches change, so editing Forge Studio no longer re-downloads 82MB or
+# recompiles Java on every deploy.
 RUN cd /opt/nitron && node scripts/prepare-template.js && \
     test -s template/base.apk && \
     test -s template/nitron-plugin-api.jar
+
+# A non-empty base.apk is not proof the patch landed: assert the DEX actually
+# contains the night-theme code, so a silently skipped patch fails here instead
+# of shipping an APK that ignores the system theme.
+RUN cd /opt/nitron && node -e "const z=require('adm-zip');const d=new z('template/base.apk').getEntry('classes.dex');if(!d)throw new Error('base.apk has no classes.dex');const s=d.getData().toString('latin1');for(const m of ['dark light','forgeLastNightMode','onConfigurationChanged'])if(!s.includes(m))throw new Error('night-theme patch missing from rebuilt classes.dex: '+m);console.log('OK: classes.dex contains the Forge night-theme patch');"
 
 # Verify Java and Nitron independently.
 RUN echo "========== JAVA CHECK ==========" && \
@@ -92,21 +116,9 @@ RUN npm install --omit=dev --no-audit --no-fund
 
 COPY . .
 
-# Rebuild Nitron's native Android shell with real system night-mode support.
-# WebView derives prefers-color-scheme from the Activity theme's isLightTheme.
-RUN test -f /app/scripts/patch-nitron-theme.js || \
-    (echo "ERROR: scripts/patch-nitron-theme.js is missing from the build context. Commit it at scripts/patch-nitron-theme.js (and make sure .dockerignore does not exclude it)." && exit 1)
-
-RUN node /app/scripts/patch-nitron-theme.js /opt/nitron/template-src/base/MainActivity.java
-
-# Reuses the cached android.jar / R8 from the warm-up layer above.
-RUN cd /opt/nitron && node scripts/prepare-template.js
-
-# A non-empty base.apk is not proof the patch landed: assert the rebuilt DEX
-# actually contains the night-theme code, so a silently skipped patch fails here
-# instead of shipping an APK that ignores the system theme.
-RUN test -s /opt/nitron/template/base.apk && \
-    cd /opt/nitron && node -e "const z=require('adm-zip');const d=new z('template/base.apk').getEntry('classes.dex');if(!d)throw new Error('base.apk has no classes.dex');const s=d.getData().toString('latin1');for(const m of ['dark light','forgeLastNightMode','onConfigurationChanged'])if(!s.includes(m))throw new Error('night-theme patch missing from rebuilt classes.dex: '+m);console.log('OK: rebuilt classes.dex contains the Forge night-theme patch');"
+# The preview/export geometry contract. Cheap, no browser needed, and it fails
+# the build if the crop preview ever drifts from the 512px export again.
+RUN node /app/scripts/verify-icon-align.js
 
 EXPOSE 3000
 

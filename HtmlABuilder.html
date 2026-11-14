@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -47,6 +48,17 @@
     .workspace>.stack:last-child{min-height:0;overflow:auto;gap:10px}
     .card{padding:15px;border-radius:16px}.card-head{margin-bottom:12px}.field{margin-bottom:11px}
     .icon-layout{grid-template-columns:minmax(120px,170px) minmax(0,1fr);gap:13px}.crop-wrap{width:min(170px,100%);height:auto;aspect-ratio:1}
+    /* The crop preview renders the canonical 200x200 export space, then scales that
+       space to whatever size the responsive box actually is. Without this the
+       preview showed a 200px window inside a 132-170px box, so the framing you
+       composed was never the framing that got exported. */
+    .crop-stage{position:absolute;top:0;left:0;width:200px;height:200px;transform-origin:0 0;transform:scale(var(--crop-scale,.85))}
+    .crop-mask{position:absolute;inset:0;pointer-events:none;opacity:0;transition:opacity .15s}
+    .crop-wrap.mask-on:not(.empty) .crop-mask{opacity:1}
+    .crop-mask:before{content:'';position:absolute;inset:0;border-radius:50%;box-shadow:0 0 0 240px rgba(6,9,16,.6);outline:1px solid rgba(233,238,250,.5)}
+    .crop-mask:after{content:'';position:absolute;inset:4.17%;border-radius:50%;border:1px dashed rgba(169,156,255,.7)}
+    .crop-toggle{display:flex;align-items:center;gap:8px;font-size:10px;color:#aeb7ca;cursor:pointer;line-height:1.4}
+    .crop-toggle input{accent-color:#a99cff;width:15px;height:15px;flex:none}
     .drop-zone{padding:18px 12px}.file-list{max-height:min(24vh,180px)}
     .build-card{position:static}.terminal-card{margin-top:0}.terminal{height:min(24vh,170px)}
     .footer{flex:none;margin-top:7px;font-size:9px}
@@ -112,7 +124,7 @@
           <div class="field"><label for="appName">Application name</label><input id="appName" type="text" value="My App" maxlength="48" autocomplete="off"><div class="field-hint">This is the name displayed beneath your app icon on Android.</div></div>
           <div class="field"><label for="packageName">Package identifier</label><input id="packageName" type="text" value="com.forgeapps.myapp" spellcheck="false" autocomplete="off"><div class="field-hint">Keep this identifier unchanged when updating an app you've already published.</div></div>
           <div class="saved-tools"><button class="secondary-btn" type="button" id="saveProjectBtn">Save project settings + files</button><span class="field-hint" id="saveHint">Keep this app ready to rebuild later.</span></div>
-<div class="setting-row"><span>Show Android status and navigation bars</span><input id="showStatusBar" type="checkbox" checked aria-label="Show Android status and navigation bars"></div>
+<div class="setting-row"><span>Show Android status bar</span><input id="showStatusBar" type="checkbox" checked aria-label="Show Android status bar"></div>
         </section>
 
         <section class="card stage-card" id="iconCard">
@@ -120,7 +132,7 @@
           <input class="hidden-input" type="file" id="iconInput" accept="image/png,image/jpeg,image/webp">
           <div class="icon-layout">
             <div>
-              <div class="crop-wrap empty" id="cropContainer"><img id="cropImage" alt="Launcher icon crop preview"></div>
+              <div class="crop-wrap empty mask-on" id="cropContainer"><div class="crop-stage" id="cropStage"><img id="cropImage" alt="Launcher icon crop preview"></div><div class="crop-mask" aria-hidden="true"></div></div>
               <button class="upload-btn" type="button" id="uploadIconBtn" style="margin-top:10px"><span class="plus">＋</span> Choose icon</button>
               <button class="secondary-btn" type="button" id="changeIconBtn" style="display:none;width:100%;margin-top:10px">Change image</button>
             </div>
@@ -128,11 +140,12 @@
               <div class="control"><label for="zoomSlider">Scale</label><input id="zoomSlider" type="range" min="0.02" max="5" step="0.01" value="1"><output id="zoomValue">100%</output></div>
               <div class="control"><label for="rotateSlider">Rotation</label><input id="rotateSlider" type="range" min="-180" max="180" step="1" value="0"><output id="rotateValue">0°</output></div>
               <div class="control-actions"><button class="secondary-btn" type="button" id="rotateLeft">↶ 90°</button><button class="secondary-btn" type="button" id="rotateRight">↷ 90°</button><button class="secondary-btn" type="button" id="resetCrop">Reset</button></div>
+              <label class="crop-toggle"><input type="checkbox" id="maskToggle" checked><span>Show Android launcher mask &amp; safe zone</span></label>
               <button class="remove-btn" type="button" id="removeBgBtn">✦ Remove background</button>
               <div class="progress-copy" id="bgProgress" aria-live="polite">AI processing runs on this device. First use downloads the model.</div>
             </div>
           </div>
-          <div class="icon-foot">Transparent PNG is preserved in the exported launcher icon. The first background-removal run may take longer while its AI model downloads.</div>
+          <div class="icon-foot">The preview is a true 1:1 view of the exported 512&times;512 PNG. Android masks adaptive icons to a circle, so keep important detail inside the dashed safe zone &mdash; the dimmed corners are trimmed on device. Transparent PNG is preserved. The first background-removal run may take longer while its AI model downloads.</div>
         </section>
 
         <section class="card stage-card" id="androidCard">
@@ -141,7 +154,7 @@
             <div class="field"><label for="appVersion">Version</label><input id="appVersion" type="text" value="1.0.0" maxlength="24" autocomplete="off"><div class="field-hint">Increase this for every Play Store update.</div></div>
             <div class="field"><label for="orientation">Orientation</label><select id="orientation" class="forge-select"><option value="portrait">Portrait</option><option value="landscape">Landscape</option><option value="auto">Auto</option></select></div>
           </div>
-          <div class="setting-row"><span>Show Android status and navigation bars</span><input id="showStatusBarAndroid" type="checkbox" checked aria-label="Show Android status and navigation bars"></div>
+          <div class="setting-row"><span>Show Android status bar</span><input id="showStatusBarAndroid" type="checkbox" checked aria-label="Show Android status bar"></div>
           <div class="permission-toolbar"><div><strong>App permissions</strong><p>Select only features your app needs. Android still asks users at runtime for sensitive permissions.</p></div><div class="permission-count" id="permissionCount">2 selected</div></div><div class="field-hint">Forge adds required Android compatibility permissions automatically. Special access opens the relevant Android Settings page; it cannot be granted by a normal pop-up.</div>
           <div class="permission-groups" id="permissionGroups">
             <details open><summary>Core & network</summary><div class="permission-grid">
@@ -304,11 +317,16 @@
   let originalIconDataUrl = null;
   let imageObjectUrl = null;
   let isDragging = false;
-  let dragStartX = 0, dragStartY = 0, imgX = 0, imgY = 0;
+  // imgX/imgY are the image's translate offset in canonical 200x200 icon units.
+  // dragBaseX/Y hold the offset at pointerdown so a drag applies a pure delta.
+  let dragStartX = 0, dragStartY = 0, dragBaseX = 0, dragBaseY = 0, imgX = 0, imgY = 0;
   let packageWasEdited = false;
   let bgModulePromise = null;
   const cropImg = $('cropImage');
   const cropContainer = $('cropContainer');
+  const cropStage = $('cropStage');
+  const ICON_UNITS = 200;   // canonical crop space
+  const ICON_EXPORT = 512;  // exported PNG edge
   function isValidHttpsUrl(value) {
     try {
       const url = new URL(String(value || '').trim());
@@ -465,24 +483,30 @@
   $('uploadIconBtn').addEventListener('click', () => $('iconInput').click());
   $('changeIconBtn').addEventListener('click', () => $('iconInput').click());
 
-  function cropViewScale() {
-    const rect = cropContainer.getBoundingClientRect();
-    return rect.width > 0 ? rect.width / 200 : 1;
+  // Map the canonical 200x200 icon space onto the real, responsive preview box.
+  // Every crop value stays in icon units; only this scale touches device pixels.
+  function syncCropScale() {
+    // clientWidth is the content box. .crop-wrap uses border-box sizing with a
+    // 1px border, so getBoundingClientRect().width is 2px wider than the area
+    // the stage actually occupies and would over-scale the preview.
+    const edge = cropContainer.clientWidth || ICON_UNITS;
+    cropStage.style.setProperty('--crop-scale', String(edge / ICON_UNITS));
   }
+  if (typeof ResizeObserver === 'function') new ResizeObserver(syncCropScale).observe(cropContainer);
+  else window.addEventListener('resize', syncCropScale);
+
   function initCrop() {
     if (!cropImg.naturalWidth || !cropImg.naturalHeight) return;
     const width = cropImg.naturalWidth, height = cropImg.naturalHeight;
-    imgX = 100 - width / 2; imgY = 100 - height / 2;
-    // Zoom is expressed in the export's 200×200 coordinate space, not in
-    // device CSS pixels, so the preview and 512px export stay in agreement.
-    const scale = Math.min(200 / width, 200 / height);
+    imgX = ICON_UNITS / 2 - width / 2; imgY = ICON_UNITS / 2 - height / 2;
+    const scale = Math.min(ICON_UNITS / width, ICON_UNITS / height);
     $('zoomSlider').value = Math.max(.02, Math.min(5, scale)); $('rotateSlider').value = 0;
+    syncCropScale();
     updateCropTransform();
   }
   function updateCropTransform() {
     const zoom = Number($('zoomSlider').value), rotate = Number($('rotateSlider').value);
-    const viewScale = cropViewScale();
-    cropImg.style.transform = `translate(${imgX * viewScale}px, ${imgY * viewScale}px) rotate(${rotate}deg) scale(${zoom * viewScale})`;
+    cropImg.style.transform = `translate(${imgX}px, ${imgY}px) rotate(${rotate}deg) scale(${zoom})`;
     $('zoomValue').textContent = `${Math.round(zoom * 100)}%`; $('rotateValue').textContent = `${rotate}°`;
   }
   $('zoomSlider').addEventListener('input', updateCropTransform);
@@ -492,25 +516,26 @@
   $('resetCrop').addEventListener('click', initCrop);
 
   cropContainer.addEventListener('pointerdown', event => {
-    if (!iconDataUrl || event.button > 0) return;
-    isDragging = true;
+    if (!iconDataUrl) return;
+    isDragging = true; cropContainer.setPointerCapture(event.pointerId);
+    // Anchor on the pointer position and the offset separately. Subtracting the
+    // icon-unit offset from a client-pixel coordinate mixed two unit systems and
+    // made the image jump on the first move frame.
     dragStartX = event.clientX; dragStartY = event.clientY;
-    try { cropContainer.setPointerCapture(event.pointerId); } catch (_) {}
-    event.preventDefault();
+    dragBaseX = imgX; dragBaseY = imgY;
   });
   cropContainer.addEventListener('pointermove', event => {
     if (!isDragging) return;
-    const rect = cropContainer.getBoundingClientRect();
-    if (!rect.width || !rect.height) return;
-    // Apply movement deltas. The previous implementation recalculated an
-    // absolute position from the pointer and caused the image to jump on drag.
-    imgX += (event.clientX - dragStartX) * (200 / rect.width);
-    imgY += (event.clientY - dragStartY) * (200 / rect.height);
-    dragStartX = event.clientX; dragStartY = event.clientY;
+    const unitsPerPx = ICON_UNITS / (cropContainer.clientWidth || ICON_UNITS);
+    imgX = dragBaseX + (event.clientX - dragStartX) * unitsPerPx;
+    imgY = dragBaseY + (event.clientY - dragStartY) * unitsPerPx;
     updateCropTransform();
   });
   ['pointerup', 'pointercancel', 'lostpointercapture'].forEach(type => cropContainer.addEventListener(type, () => { isDragging = false; }));
-  window.addEventListener('resize', () => { if (iconDataUrl) updateCropTransform(); });
+
+  $('maskToggle').addEventListener('change', event => {
+    cropContainer.classList.toggle('mask-on', event.target.checked);
+  });
 
   async function getBackgroundModule() {
     if (!bgModulePromise) {
@@ -554,24 +579,23 @@
     if (!iconDataUrl) return null;
     if (cropImg.decode) await cropImg.decode();
     if (!cropImg.naturalWidth || !cropImg.naturalHeight) throw new Error('The launcher icon has not finished loading.');
-    const canvas = document.createElement('canvas'); canvas.width = 512; canvas.height = 512;
+    const canvas = document.createElement('canvas'); canvas.width = ICON_EXPORT; canvas.height = ICON_EXPORT;
     const ctx = canvas.getContext('2d', { alpha: true });
     if (!ctx) throw new Error('This browser could not create an image canvas.');
-    ctx.clearRect(0, 0, 512, 512); ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = 'high';
+    ctx.clearRect(0, 0, ICON_EXPORT, ICON_EXPORT); ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = 'high';
     const zoom = Number($('zoomSlider').value), rotation = Number($('rotateSlider').value) * Math.PI / 180;
-    // The preview's imgX/imgY include the initial centering offset. The export
-    // canvas already starts with the image centered, so apply only the user's
-    // drag delta. Applying the full offset pushed large source images off-canvas
-    // and produced a completely transparent launcher icon.
-    const initialX = 100 - cropImg.naturalWidth / 2;
-    const initialY = 100 - cropImg.naturalHeight / 2;
-    const dragOffsetX = imgX - initialX;
-    const dragOffsetY = imgY - initialY;
-    ctx.translate(256 + dragOffsetX * 2.56, 256 + dragOffsetY * 2.56);
+    // Single source of truth shared with the preview: the image centre in icon
+    // units. The CSS transform puts the centre at (natural/2 + imgX) because its
+    // transform-origin is the image's own centre; the export reproduces that
+    // exactly, then scales icon units -> 512px. No offset reconstruction.
+    const centreX = cropImg.naturalWidth / 2 + imgX;
+    const centreY = cropImg.naturalHeight / 2 + imgY;
+    const unitScale = ICON_EXPORT / ICON_UNITS;
+    ctx.translate(centreX * unitScale, centreY * unitScale);
     ctx.rotate(rotation);
-    ctx.scale(zoom * 2.56, zoom * 2.56);
+    ctx.scale(zoom * unitScale, zoom * unitScale);
     ctx.drawImage(cropImg, -cropImg.naturalWidth / 2, -cropImg.naturalHeight / 2);
-    const pixels = ctx.getImageData(0, 0, 512, 512).data;
+    const pixels = ctx.getImageData(0, 0, ICON_EXPORT, ICON_EXPORT).data;
     let visiblePixels = 0;
     for (let i = 3; i < pixels.length; i += 4) { if (pixels[i] > 0) visiblePixels++; }
     if (!visiblePixels) throw new Error('The exported icon is completely transparent. Reset the crop or reposition the image and try again.');
