@@ -77,6 +77,11 @@ RUN node /opt/forge-scripts/patch-nitron-system-bars.js /opt/nitron/template-src
 # browser. Must run before prepare-template.js (Java is dexed there).
 RUN node /opt/forge-scripts/patch-nitron-file-chooser.js /opt/nitron/template-src/base/MainActivity.java
 
+# Surface javac's stderr in the Render build log. prepare-template.js swallows
+# it, so a compile error looks like a bare exit 1 with no diagnostics. This
+# shim forwards child_process to inherited stdio and re-throws on failure.
+RUN cd /opt/nitron && node -e "const fs=require('fs');const f='scripts/prepare-template.js';let s=fs.readFileSync(f,'utf8');if(!s.includes('FORGE_JAVAC_TRACE')){const shim=\"const child_process = require('child_process');const _execFile=child_process.execFile;const _execFileSync=child_process.execFileSync;child_process.execFile=function(file,args,opts,cb){if(typeof opts==='function'){cb=opts;opts={};}return _execFile.call(this,file,args,Object.assign({},opts,{stdio:'inherit'}),function(err){if(err){console.error('FORGE_JAVAC_TRACE execFile failed:',file,args&&args.join(' '));}if(cb)cb(err);});};child_process.execFileSync=function(file,args,opts){try{return _execFileSync.call(this,file,args,opts);}catch(e){console.error('FORGE_JAVAC_TRACE execFileSync stderr:');console.error(e&&e.stderr?e.stderr.toString():'');console.error(e&&e.stdout?e.stdout.toString():'');throw e;}};/* FORGE_JAVAC_TRACE */\n\";s=shim+s;fs.writeFileSync(f,s);console.log('FORGE_JAVAC_TRACE: installed');}"
+
 # ── LIVE-URL FIX ─────────────────────────────────────────────────────────────
 # Nitron emits every nitron.* <meta-data> INSIDE <activity>, but MainActivity
 # reads ApplicationInfo.metaData, which only exposes <application>-level
