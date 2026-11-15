@@ -52,6 +52,7 @@ RUN test -f /opt/forge-scripts/patch-nitron-theme.js && \
     test -f /opt/forge-scripts/patch-nitron-icon.js && \
     test -f /opt/forge-scripts/patch-nitron-system-bars.js && \
     test -f /opt/forge-scripts/patch-nitron-runtime-config.js && \
+    test -f /opt/forge-scripts/patch-nitron-file-chooser.js && \
     test -f /opt/forge-scripts/verify-icon-align.js
 
 # Make the template compiler locale-independent. prepare-template.js builds its
@@ -66,6 +67,15 @@ RUN node /opt/forge-scripts/patch-nitron-theme.js /opt/nitron/template-src/base/
 # Native immersive mode: expose a trusted WebView bridge backed by MainActivity
 # itself, then re-apply the selected state whenever the Activity resumes/focuses.
 RUN node /opt/forge-scripts/patch-nitron-system-bars.js /opt/nitron/template-src/base/MainActivity.java
+
+# ── FILE-INPUT FIX ───────────────────────────────────────────────────────────
+# Nitron 3.2.0 never overrides WebChromeClient.onShowFileChooser, so every
+# <input type="file"> in a generated APK silently does nothing (tap → no picker
+# → no File object). Chrome handles this natively; WebView does not. This patch
+# installs a WebChromeClient that opens ACTION_GET_CONTENT with audio MIMEs
+# widened, so the "import music" button works in the APK exactly like in the
+# browser. Must run before prepare-template.js (Java is dexed there).
+RUN node /opt/forge-scripts/patch-nitron-file-chooser.js /opt/nitron/template-src/base/MainActivity.java
 
 # ── LIVE-URL FIX ─────────────────────────────────────────────────────────────
 # Nitron emits every nitron.* <meta-data> INSIDE <activity>, but MainActivity
@@ -103,7 +113,7 @@ RUN cd /opt/nitron && node scripts/prepare-template.js && \
 # the night-theme code, the native system-bar bridge, and the runtime-config
 # reader. This prevents shipping a server image whose generated APKs silently
 # ignore those settings.
-RUN cd /opt/nitron && node -e "const z=require('adm-zip');const d=new z('template/base.apk').getEntry('classes.dex');if(!d)throw new Error('base.apk has no classes.dex');const s=d.getData().toString('latin1');for(const m of ['dark light','forgeLastNightMode','onConfigurationChanged','setSystemBarsVisible','forgeRuntimeMetaData','getActivityInfo'])if(!s.includes(m))throw new Error('native template patch missing from rebuilt classes.dex: '+m);console.log('OK: classes.dex contains Forge night-theme, native system-bars and runtime-config patches');"
+RUN cd /opt/nitron && node -e "const z=require('adm-zip');const d=new z('template/base.apk').getEntry('classes.dex');if(!d)throw new Error('base.apk has no classes.dex');const s=d.getData().toString('latin1');for(const m of ['dark light','forgeLastNightMode','onConfigurationChanged','setSystemBarsVisible','forgeRuntimeMetaData','getActivityInfo','onShowFileChooser','forgeFileCallback'])if(!s.includes(m))throw new Error('native template patch missing from rebuilt classes.dex: '+m);console.log('OK: classes.dex contains Forge night-theme, native system-bars, runtime-config and file-chooser patches');"
 
 # Verify Java and Nitron independently.
 RUN echo "========== JAVA CHECK ==========" && \
