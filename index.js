@@ -60,9 +60,10 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
 public class TtsPlugin extends NitronPlugin {
-    private TextToSpeech tts;
+    private volatile TextToSpeech tts;
     private final AtomicBoolean ready = new AtomicBoolean(false);
     private final AtomicBoolean failed = new AtomicBoolean(false);
+    private final AtomicBoolean initializing = new AtomicBoolean(false);
     private final AtomicInteger utteranceSeq = new AtomicInteger(0);
     private final ConcurrentLinkedQueue<JSONObject> events = new ConcurrentLinkedQueue<>();
     private volatile boolean speakingNow = false;
@@ -82,39 +83,60 @@ public class TtsPlugin extends NitronPlugin {
         catch (Exception e) { return -1; }
     }
 
+    private float readFloat(PluginCall call, String key, float fallback) {
+        // getString(key, default) is proven in this plugin API (PermissionPlugin uses it).
+        try {
+            String raw = call.getString(key, "");
+            if (raw == null || raw.isEmpty()) return fallback;
+            return Float.parseFloat(raw);
+        } catch (Exception e) { return fallback; }
+    }
+
     @NitronMethod
     public void init(PluginCall call) throws Exception {
         if (ready.get()) { JSONObject r = new JSONObject(); r.put("ready", true); call.resolve(r); return; }
         if (failed.get()) { call.reject("Android text-to-speech engine is unavailable on this device."); return; }
-        if (tts == null) {
+        if (initializing.compareAndSet(false, true)) {
             runOnUiThread(() -> {
                 try {
-                    tts = new TextToSpeech(getContext(), status -> {
-                        if (status == TextToSpeech.SUCCESS) {
-                            try { tts.setLanguage(Locale.getDefault()); } catch (Exception ignored) {}
-                            tts.setOnUtteranceProgressListener(new UtteranceProgressListener() {
-                                @Override public void onStart(String utteranceId) {
-                                    speakingNow = true;
-                                    emit("start", parseId(utteranceId), -1, -1, null);
-                                }
-                                @Override public void onDone(String utteranceId) {
-                                    speakingNow = false;
-                                    emit("done", parseId(utteranceId), -1, -1, null);
-                                }
-                                @Override public void onError(String utteranceId) {
-                                    speakingNow = false;
-                                    emit("error", parseId(utteranceId), -1, -1, "synthesis-failed");
-                                }
-                                @Override public void onRangeStart(String utteranceId, int start, int end, int frame) {
-                                    emit("range", parseId(utteranceId), start, end, null);
-                                }
-                            });
-                            ready.set(true);
-                        } else {
+                    // Holder avoids any null-field race if the engine calls back early
+                    // or on a binder thread.
+                    final TextToSpeech[] holder = new TextToSpeech[1];
+                    holder[0] = new TextToSpeech(getContext(), status -> {
+                        try {
+                            TextToSpeech engine = holder[0] != null ? holder[0] : tts;
+                            if (status == TextToSpeech.SUCCESS && engine != null) {
+                                try { engine.setLanguage(Locale.getDefault()); } catch (Exception ignored) {}
+                                engine.setOnUtteranceProgressListener(new UtteranceProgressListener() {
+                                    @Override public void onStart(String utteranceId) {
+                                        speakingNow = true;
+                                        emit("start", parseId(utteranceId), -1, -1, null);
+                                    }
+                                    @Override public void onDone(String utteranceId) {
+                                        speakingNow = false;
+                                        emit("done", parseId(utteranceId), -1, -1, null);
+                                    }
+                                    @Override public void onError(String utteranceId) {
+                                        speakingNow = false;
+                                        emit("error", parseId(utteranceId), -1, -1, "synthesis-failed");
+                                    }
+                                    @Override public void onRangeStart(String utteranceId, int start, int end, int frame) {
+                                        emit("range", parseId(utteranceId), start, end, null);
+                                    }
+                                });
+                                tts = engine;
+                                ready.set(true);
+                            } else {
+                                failed.set(true);
+                            }
+                        } catch (Exception e) {
                             failed.set(true);
                         }
                     });
-                } catch (Exception e) { failed.set(true); }
+                    tts = holder[0];
+                } catch (Exception e) {
+                    failed.set(true);
+                }
             });
         }
         JSONObject r = new JSONObject(); r.put("ready", ready.get()); r.put("pending", !failed.get());
@@ -125,14 +147,16 @@ public class TtsPlugin extends NitronPlugin {
     public void speak(PluginCall call) throws Exception {
         if (!ready.get()) { call.reject("not-ready"); return; }
         final String text = call.getString("text", "");
-        final float rate = (float) call.getDouble("rate", 1.0);
-        final float pitch = (float) call.getDouble("pitch", 1.0);
+        final float rate = readFloat(call, "rate", 1.0f);
+        final float pitch = readFloat(call, "pitch", 1.0f);
         final int id = utteranceSeq.incrementAndGet();
         runOnUiThread(() -> {
             try {
-                tts.setSpeechRate(Math.max(0.25f, Math.min(3.0f, rate)));
-                tts.setPitch(Math.max(0.25f, Math.min(2.0f, pitch)));
-                int result = tts.speak(text, TextToSpeech.QUEUE_FLUSH, null, "forge-" + id);
+                TextToSpeech engine = tts;
+                if (engine == null) { emit("error", id, -1, -1, "synthesis-failed"); return; }
+                engine.setSpeechRate(Math.max(0.25f, Math.min(3.0f, rate)));
+                engine.setPitch(Math.max(0.25f, Math.min(2.0f, pitch)));
+                int result = engine.speak(text, TextToSpeech.QUEUE_FLUSH, null, "forge-" + id);
                 if (result == TextToSpeech.ERROR) {
                     emit("error", id, -1, -1, "synthesis-failed");
                 }
@@ -149,7 +173,9 @@ public class TtsPlugin extends NitronPlugin {
         JSONObject r = new JSONObject();
         r.put("ready", ready.get());
         r.put("failed", failed.get());
-        r.put("speaking", speakingNow || (tts != null && tts.isSpeaking()));
+        boolean live = false;
+        try { TextToSpeech engine = tts; live = engine != null && engine.isSpeaking(); } catch (Exception ignored) {}
+        r.put("speaking", speakingNow || live);
         JSONArray drained = new JSONArray();
         JSONObject e; int guard = 0;
         while ((e = events.poll()) != null && guard++ < 200) drained.put(e);
@@ -160,7 +186,7 @@ public class TtsPlugin extends NitronPlugin {
     @NitronMethod
     public void stop(PluginCall call) throws Exception {
         runOnUiThread(() -> {
-            try { if (tts != null) tts.stop(); } catch (Exception ignored) {}
+            try { TextToSpeech engine = tts; if (engine != null) engine.stop(); } catch (Exception ignored) {}
             speakingNow = false;
             events.clear();
         });
@@ -171,17 +197,23 @@ public class TtsPlugin extends NitronPlugin {
 `;
 
 const FORGE_TTS_SHIM = `<script id="forge-android-tts-shim">(function(){
-  // Android WebView has no Web Speech API. This shim backs a speechSynthesis-
-  // compatible facade with Forge's native Tts plugin (Android TextToSpeech),
-  // including REAL word-boundary events from onRangeStart (Android 8+).
-  function bridge(){return (window.Nitron&&window.Nitron.plugins)?window.Nitron:((window.NitronRuntime&&window.NitronRuntime.plugins)?window.NitronRuntime:window.Nitron);}
+  // Android WebView has no working Web Speech API. Install a speechSynthesis-
+  // compatible facade backed by Forge's native Tts plugin (Android TextToSpeech),
+  // with REAL word-boundary events from onRangeStart (Android 8+).
+  // v2: never early-exits; installs immediately in WebView and queues work until
+  // the Nitron plugin bridge finishes loading (it can attach late on slow devices).
+  var inWebView=false;
+  try{
+    var ua=navigator.userAgent||'';
+    inWebView=/; wv\\)/.test(ua)||(/Android/.test(ua)&&/Version\\/\\d/.test(ua))||location.hostname==='appassets.androidplatform.net';
+  }catch(e){}
+  var hasNativeApi=false;
+  try{hasNativeApi=!!(window.speechSynthesis&&typeof window.speechSynthesis.speak==='function'&&typeof window.SpeechSynthesisUtterance==='function');}catch(e){}
+  if(!inWebView&&hasNativeApi)return; // plain browser: keep the real Web Speech API
+  function bridge(){try{return (window.Nitron&&window.Nitron.plugins)?window.Nitron:((window.NitronRuntime&&window.NitronRuntime.plugins)?window.NitronRuntime:window.Nitron);}catch(e){return null;}}
   function api(){var b=bridge();return b&&b.plugins&&b.plugins.Tts;}
-  var nativeAvailable=false;
-  try{nativeAvailable=!!(window.Nitron||window.NitronRuntime);}catch(e){}
-  if(!nativeAvailable)return; // plain browser: keep the real Web Speech API
-  var active=null,pollTimer=null,readyState=0; // 0 unknown, 1 ready, -1 failed
-  var pendingSpeak=null,currentNativeId=-1;
 
+  var active=null,pollTimer=null,readyState=0,pendingSpeak=null,currentNativeId=-1;
   function Utterance(text){
     this.text=String(text||'');this.rate=1;this.pitch=1;this.volume=1;this.lang='';
     this.onstart=null;this.onend=null;this.onerror=null;this.onboundary=null;
@@ -192,8 +224,10 @@ const FORGE_TTS_SHIM = `<script id="forge-android-tts-shim">(function(){
   function ensurePolling(){
     if(pollTimer)return;
     pollTimer=setInterval(function(){
-      var p=api();if(!p||!p.poll){return;}
-      p.poll().then(function(state){
+      var p=api();if(!p||!p.poll)return;
+      var pr;try{pr=p.poll();}catch(e){return;}
+      if(!pr||typeof pr.then!=='function')return;
+      pr.then(function(state){
         if(state&&state.ready)readyState=1;
         if(state&&state.failed)readyState=-1;
         if(readyState!==1&&pendingSpeak){tryInit(pendingSpeak.u,pendingSpeak.attempt+1);return;}
@@ -207,25 +241,29 @@ const FORGE_TTS_SHIM = `<script id="forge-android-tts-shim">(function(){
           else if(e.type==='error'){var u2=active;active=null;stopPolling();fire(u2,'error',{type:'error',error:e.error||'synthesis-failed',utterance:u2});}
         }
         if(!active&&!pendingSpeak)stopPolling();
-      }).catch(function(){/* bridge hiccup: next tick retries */});
+      }).catch(function(){});
     },90);
   }
   function tryInit(u,attempt){
     var p=api();
-    if(!p){pendingSpeak=null;fire(u,'error',{type:'error',error:'synthesis-unavailable',utterance:u});return;}
-    if(attempt>50){pendingSpeak=null;fire(u,'error',{type:'error',error:'synthesis-unavailable',utterance:u});return;}
+    if(attempt>200){pendingSpeak=null;fire(u,'error',{type:'error',error:'synthesis-unavailable',utterance:u});return;}
     pendingSpeak={u:u,attempt:attempt};
-    if(p.init)p.init().then(function(r){
-      if(r&&r.ready){readyState=1;var job=pendingSpeak;pendingSpeak=null;if(job)doSpeak(job.u);}
-      else if(readyState===-1){var job2=pendingSpeak;pendingSpeak=null;if(job2)fire(job2.u,'error',{type:'error',error:'synthesis-unavailable',utterance:job2.u});}
-      else{ensurePolling();}
-    }).catch(function(){var job=pendingSpeak;pendingSpeak=null;if(job)fire(job.u,'error',{type:'error',error:'synthesis-unavailable',utterance:job.u});});
     ensurePolling();
+    if(!p||!p.init)return; // bridge still loading; poll loop retries
+    var pr;try{pr=p.init();}catch(e){return;}
+    if(!pr||typeof pr.then!=='function')return;
+    pr.then(function(r){
+      if(r&&r.ready){readyState=1;var job=pendingSpeak;pendingSpeak=null;if(job)doSpeak(job.u);}
+      else if(readyState===-1){var j2=pendingSpeak;pendingSpeak=null;if(j2)fire(j2.u,'error',{type:'error',error:'synthesis-unavailable',utterance:j2.u});}
+    }).catch(function(){});
   }
   function doSpeak(u){
-    var p=api();if(!p||!p.speak){fire(u,'error',{type:'error',error:'synthesis-unavailable',utterance:u});return;}
+    var p=api();
+    if(!p||!p.speak){tryInit(u,0);return;}
     active=u;
-    p.speak({text:u.text,rate:u.rate||1,pitch:u.pitch||1}).then(function(r){
+    var pr;try{pr=p.speak({text:u.text,rate:String(u.rate||1),pitch:String(u.pitch||1)});}catch(e){active=null;fire(u,'error',{type:'error',error:'synthesis-failed',utterance:u});return;}
+    if(!pr||typeof pr.then!=='function'){active=null;fire(u,'error',{type:'error',error:'synthesis-failed',utterance:u});return;}
+    pr.then(function(r){
       currentNativeId=r&&typeof r.id==='number'?r.id:-1;
       ensurePolling();
     }).catch(function(err){
@@ -240,23 +278,19 @@ const FORGE_TTS_SHIM = `<script id="forge-android-tts-shim">(function(){
     speak:function(u){
       if(!u||typeof u!=='object')return;
       if(active){var old=active;active=null;fire(old,'error',{type:'error',error:'interrupted',utterance:old});}
-      var p=api();
-      if(readyState===1&&p){doSpeak(u);}
-      else{tryInit(u,0);}
+      if(readyState===1&&api())doSpeak(u);else tryInit(u,0);
     },
     cancel:function(){
       var old=active;active=null;pendingSpeak=null;stopPolling();
-      var p=api();if(p&&p.stop)p.stop().catch(function(){});
+      var p=api();if(p&&p.stop){try{var pr=p.stop();if(pr&&pr.catch)pr.catch(function(){});}catch(e){}}
       if(old)fire(old,'error',{type:'error',error:'interrupted',utterance:old});
     },
-    pause:function(){/* Android TTS has no pause; apps use cancel+re-speak */},
-    resume:function(){},
+    pause:function(){},resume:function(){},
     getVoices:function(){return [];},
     addEventListener:function(){},removeEventListener:function(){},
     onvoiceschanged:null
   };
   function install(){
-    if(!api())return false;
     try{
       Object.defineProperty(window,'speechSynthesis',{value:facade,configurable:true,writable:true});
       window.SpeechSynthesisUtterance=Utterance;
@@ -265,12 +299,15 @@ const FORGE_TTS_SHIM = `<script id="forge-android-tts-shim">(function(){
       try{window.speechSynthesis=facade;window.SpeechSynthesisUtterance=Utterance;return true;}catch(e2){return false;}
     }
   }
-  // The Nitron bridge may attach after DOMContentLoaded; retry briefly.
-  var tries=0;
-  (function waitBridge(){
-    if(install())return;
-    if(++tries<60)setTimeout(waitBridge,250);
-  })();
+  if(inWebView){
+    install(); // support-check passes now; audio starts when the bridge loads
+  }else{
+    var tries=0;
+    (function waitBridge(){
+      if(api()){install();return;}
+      if(++tries<240)setTimeout(waitBridge,250);
+    })();
+  }
 })();</script>`;
 
 function redactSecrets(value) {
@@ -618,6 +655,33 @@ app.post('/api/jobs', upload.array('files'), async (req, res) => {
         fs.copyFileSync(file.path, targetPath);
       }
       if (commonRoot) sendLog(id, 'Project root folder "' + commonRoot.replace(/\/$/, '') + '" detected — contents promoted so relative assets resolve.');
+      // Rescue flat uploads: if the HTML references "images/x.png" but the file was
+      // uploaded loose as "x.png", place a copy under images/ so the URL resolves.
+      try {
+        const entryHtml = fs.readFileSync(path.join(workDir, 'index.html'), 'utf8');
+        const refRe = /(?:url\(["']?|src=["'])([\w.-]+\/[\w./-]+\.(?:png|jpe?g|gif|webp|svg|avif))/gi;
+        let refMatch, moved = 0;
+        const seenRefs = new Set();
+        while ((refMatch = refRe.exec(entryHtml))) {
+          const ref = refMatch[1];
+          if (seenRefs.has(ref) || ref.includes('..')) continue;
+          seenRefs.add(ref);
+          const wanted = path.join(workDir, ref);
+          if (!wanted.startsWith(workDir + path.sep)) continue;
+          if (fs.existsSync(wanted)) continue;
+          const base = path.posix.basename(ref);
+          const loose = path.join(workDir, base);
+          if (fs.existsSync(loose)) {
+            fs.mkdirSync(path.dirname(wanted), { recursive: true });
+            fs.copyFileSync(loose, wanted);
+            moved++;
+          }
+        }
+        if (moved) sendLog(id, 'Asset paths reconciled: ' + moved + ' loose image(s) placed into their referenced folders.');
+      } catch (e) { /* non-fatal */ }
+      // Prove asset packaging in the build log so missing images are never silent.
+      const assetCount = projectRels.filter(rel => /\.(png|jpe?g|gif|webp|svg|avif)$/i.test(stripRoot(rel))).length;
+      sendLog(id, 'Image assets packaged: ' + assetCount + (assetCount ? ' (relative paths preserved).' : ' — none found in upload.'));
     }
     const iconFile = uploadedFiles.find(f => f.originalname === 'icon.png');
     if (iconFile) {
@@ -1066,11 +1130,15 @@ public class PermissionPlugin extends NitronPlugin {
       window.addEventListener('pageshow',applySystemBars);
       window.ForgeAndroidPermissions={refresh:refresh,request:function(permission){var p=api();if(!p)return Promise.reject(new Error('Forge Android permission bridge is unavailable'));return p.requestRuntimePermission({permission:permission});},openSettings:function(permission){var p=api();if(!p)return Promise.reject(new Error('Forge Android permission bridge is unavailable'));return p.openPermissionSettings({permission:permission});}};
     })();</script>`;
-    if (!appHtml.includes('forge-android-tts-shim')) {
+    // Forge TTS shim v2: always (re)install — removes any older shim first so
+    // stale early-exit versions can never survive a rebuild.
+    appHtml = appHtml.replace(/<script id="forge-android-tts-shim">[\s\S]*?<\/script>/g, '');
+    {
       const ttsBodyClose = appHtml.toLowerCase().lastIndexOf('</body>');
       if (ttsBodyClose >= 0) appHtml = appHtml.slice(0, ttsBodyClose) + FORGE_TTS_SHIM + appHtml.slice(ttsBodyClose);
       else appHtml += FORGE_TTS_SHIM;
       fs.writeFileSync(appEntry, appHtml);
+      sendLog(id, 'Native TTS bridge injected (shim v2): narrator uses Android TextToSpeech with word-boundary glow.');
     }
     if (!appHtml.includes('forge-android-permission-startup')) {
       const bodyCloseIndex = appHtml.toLowerCase().lastIndexOf('</body>');
