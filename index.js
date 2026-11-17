@@ -45,6 +45,234 @@ const allowedPermissions = new Set([
  'PROCESS_OUTGOING_CALLS','MANAGE_OWN_CALLS','REQUEST_DELETE_PACKAGES','HIGH_SAMPLING_RATE_SENSORS','ACCESS_LOCATION_EXTRA_COMMANDS',
  'CHANGE_NETWORK_STATE','BLUETOOTH','BLUETOOTH_ADMIN'
 ]);
+const FORGE_TTS_PLUGIN_JAVA = `package com.forge.tts;
+
+import android.speech.tts.TextToSpeech;
+import android.speech.tts.UtteranceProgressListener;
+import com.nicron.webview.NitronMethod;
+import com.nicron.webview.NitronPlugin;
+import com.nicron.webview.PluginCall;
+import org.json.JSONArray;
+import org.json.JSONObject;
+import java.util.Locale;
+import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
+
+public class TtsPlugin extends NitronPlugin {
+    private TextToSpeech tts;
+    private final AtomicBoolean ready = new AtomicBoolean(false);
+    private final AtomicBoolean failed = new AtomicBoolean(false);
+    private final AtomicInteger utteranceSeq = new AtomicInteger(0);
+    private final ConcurrentLinkedQueue<JSONObject> events = new ConcurrentLinkedQueue<>();
+    private volatile boolean speakingNow = false;
+
+    private void emit(String type, int id, int start, int end, String error) {
+        try {
+            JSONObject e = new JSONObject();
+            e.put("type", type); e.put("id", id);
+            if (start >= 0) { e.put("start", start); e.put("end", end); }
+            if (error != null) e.put("error", error);
+            events.add(e);
+        } catch (Exception ignored) {}
+    }
+
+    private int parseId(String utteranceId) {
+        try { return Integer.parseInt(String.valueOf(utteranceId).replace("forge-", "")); }
+        catch (Exception e) { return -1; }
+    }
+
+    @NitronMethod
+    public void init(PluginCall call) throws Exception {
+        if (ready.get()) { JSONObject r = new JSONObject(); r.put("ready", true); call.resolve(r); return; }
+        if (failed.get()) { call.reject("Android text-to-speech engine is unavailable on this device."); return; }
+        if (tts == null) {
+            runOnUiThread(() -> {
+                try {
+                    tts = new TextToSpeech(getContext(), status -> {
+                        if (status == TextToSpeech.SUCCESS) {
+                            try { tts.setLanguage(Locale.getDefault()); } catch (Exception ignored) {}
+                            tts.setOnUtteranceProgressListener(new UtteranceProgressListener() {
+                                @Override public void onStart(String utteranceId) {
+                                    speakingNow = true;
+                                    emit("start", parseId(utteranceId), -1, -1, null);
+                                }
+                                @Override public void onDone(String utteranceId) {
+                                    speakingNow = false;
+                                    emit("done", parseId(utteranceId), -1, -1, null);
+                                }
+                                @Override public void onError(String utteranceId) {
+                                    speakingNow = false;
+                                    emit("error", parseId(utteranceId), -1, -1, "synthesis-failed");
+                                }
+                                @Override public void onRangeStart(String utteranceId, int start, int end, int frame) {
+                                    emit("range", parseId(utteranceId), start, end, null);
+                                }
+                            });
+                            ready.set(true);
+                        } else {
+                            failed.set(true);
+                        }
+                    });
+                } catch (Exception e) { failed.set(true); }
+            });
+        }
+        JSONObject r = new JSONObject(); r.put("ready", ready.get()); r.put("pending", !failed.get());
+        call.resolve(r);
+    }
+
+    @NitronMethod
+    public void speak(PluginCall call) throws Exception {
+        if (!ready.get()) { call.reject("not-ready"); return; }
+        final String text = call.getString("text", "");
+        final float rate = (float) call.getDouble("rate", 1.0);
+        final float pitch = (float) call.getDouble("pitch", 1.0);
+        final int id = utteranceSeq.incrementAndGet();
+        runOnUiThread(() -> {
+            try {
+                tts.setSpeechRate(Math.max(0.25f, Math.min(3.0f, rate)));
+                tts.setPitch(Math.max(0.25f, Math.min(2.0f, pitch)));
+                int result = tts.speak(text, TextToSpeech.QUEUE_FLUSH, null, "forge-" + id);
+                if (result == TextToSpeech.ERROR) {
+                    emit("error", id, -1, -1, "synthesis-failed");
+                }
+            } catch (Exception e) {
+                emit("error", id, -1, -1, "synthesis-failed");
+            }
+        });
+        JSONObject r = new JSONObject(); r.put("id", id);
+        call.resolve(r);
+    }
+
+    @NitronMethod
+    public void poll(PluginCall call) throws Exception {
+        JSONObject r = new JSONObject();
+        r.put("ready", ready.get());
+        r.put("failed", failed.get());
+        r.put("speaking", speakingNow || (tts != null && tts.isSpeaking()));
+        JSONArray drained = new JSONArray();
+        JSONObject e; int guard = 0;
+        while ((e = events.poll()) != null && guard++ < 200) drained.put(e);
+        r.put("events", drained);
+        call.resolve(r);
+    }
+
+    @NitronMethod
+    public void stop(PluginCall call) throws Exception {
+        runOnUiThread(() -> {
+            try { if (tts != null) tts.stop(); } catch (Exception ignored) {}
+            speakingNow = false;
+            events.clear();
+        });
+        JSONObject r = new JSONObject(); r.put("stopped", true);
+        call.resolve(r);
+    }
+}
+`;
+
+const FORGE_TTS_SHIM = `<script id="forge-android-tts-shim">(function(){
+  // Android WebView has no Web Speech API. This shim backs a speechSynthesis-
+  // compatible facade with Forge's native Tts plugin (Android TextToSpeech),
+  // including REAL word-boundary events from onRangeStart (Android 8+).
+  function bridge(){return (window.Nitron&&window.Nitron.plugins)?window.Nitron:((window.NitronRuntime&&window.NitronRuntime.plugins)?window.NitronRuntime:window.Nitron);}
+  function api(){var b=bridge();return b&&b.plugins&&b.plugins.Tts;}
+  var nativeAvailable=false;
+  try{nativeAvailable=!!(window.Nitron||window.NitronRuntime);}catch(e){}
+  if(!nativeAvailable)return; // plain browser: keep the real Web Speech API
+  var active=null,pollTimer=null,readyState=0; // 0 unknown, 1 ready, -1 failed
+  var pendingSpeak=null,currentNativeId=-1;
+
+  function Utterance(text){
+    this.text=String(text||'');this.rate=1;this.pitch=1;this.volume=1;this.lang='';
+    this.onstart=null;this.onend=null;this.onerror=null;this.onboundary=null;
+    this.onpause=null;this.onresume=null;this.onmark=null;
+  }
+  function fire(u,name,ev){try{if(u&&typeof u['on'+name]==='function')u['on'+name](ev);}catch(e){}}
+  function stopPolling(){if(pollTimer){clearInterval(pollTimer);pollTimer=null;}}
+  function ensurePolling(){
+    if(pollTimer)return;
+    pollTimer=setInterval(function(){
+      var p=api();if(!p||!p.poll){return;}
+      p.poll().then(function(state){
+        if(state&&state.ready)readyState=1;
+        if(state&&state.failed)readyState=-1;
+        if(readyState!==1&&pendingSpeak){tryInit(pendingSpeak.u,pendingSpeak.attempt+1);return;}
+        var evs=(state&&state.events)||[];
+        for(var i=0;i<evs.length;i++){
+          var e=evs[i];
+          if(!active||e.id!==currentNativeId)continue;
+          if(e.type==='start'){fire(active,'start',{type:'start',charIndex:0,elapsedTime:0,utterance:active});}
+          else if(e.type==='range'){fire(active,'boundary',{type:'boundary',name:'word',charIndex:e.start,charLength:Math.max(0,(e.end||0)-(e.start||0)),elapsedTime:0,utterance:active});}
+          else if(e.type==='done'){var u=active;active=null;stopPolling();fire(u,'end',{type:'end',charIndex:u.text.length,elapsedTime:0,utterance:u});}
+          else if(e.type==='error'){var u2=active;active=null;stopPolling();fire(u2,'error',{type:'error',error:e.error||'synthesis-failed',utterance:u2});}
+        }
+        if(!active&&!pendingSpeak)stopPolling();
+      }).catch(function(){/* bridge hiccup: next tick retries */});
+    },90);
+  }
+  function tryInit(u,attempt){
+    var p=api();
+    if(!p){pendingSpeak=null;fire(u,'error',{type:'error',error:'synthesis-unavailable',utterance:u});return;}
+    if(attempt>50){pendingSpeak=null;fire(u,'error',{type:'error',error:'synthesis-unavailable',utterance:u});return;}
+    pendingSpeak={u:u,attempt:attempt};
+    if(p.init)p.init().then(function(r){
+      if(r&&r.ready){readyState=1;var job=pendingSpeak;pendingSpeak=null;if(job)doSpeak(job.u);}
+      else if(readyState===-1){var job2=pendingSpeak;pendingSpeak=null;if(job2)fire(job2.u,'error',{type:'error',error:'synthesis-unavailable',utterance:job2.u});}
+      else{ensurePolling();}
+    }).catch(function(){var job=pendingSpeak;pendingSpeak=null;if(job)fire(job.u,'error',{type:'error',error:'synthesis-unavailable',utterance:job.u});});
+    ensurePolling();
+  }
+  function doSpeak(u){
+    var p=api();if(!p||!p.speak){fire(u,'error',{type:'error',error:'synthesis-unavailable',utterance:u});return;}
+    active=u;
+    p.speak({text:u.text,rate:u.rate||1,pitch:u.pitch||1}).then(function(r){
+      currentNativeId=r&&typeof r.id==='number'?r.id:-1;
+      ensurePolling();
+    }).catch(function(err){
+      if(String(err&&err.message||err).indexOf('not-ready')>=0){active=null;tryInit(u,0);return;}
+      active=null;fire(u,'error',{type:'error',error:'synthesis-failed',utterance:u});
+    });
+  }
+  var facade={
+    get speaking(){return !!active;},
+    get pending(){return !!pendingSpeak;},
+    get paused(){return false;},
+    speak:function(u){
+      if(!u||typeof u!=='object')return;
+      if(active){var old=active;active=null;fire(old,'error',{type:'error',error:'interrupted',utterance:old});}
+      var p=api();
+      if(readyState===1&&p){doSpeak(u);}
+      else{tryInit(u,0);}
+    },
+    cancel:function(){
+      var old=active;active=null;pendingSpeak=null;stopPolling();
+      var p=api();if(p&&p.stop)p.stop().catch(function(){});
+      if(old)fire(old,'error',{type:'error',error:'interrupted',utterance:old});
+    },
+    pause:function(){/* Android TTS has no pause; apps use cancel+re-speak */},
+    resume:function(){},
+    getVoices:function(){return [];},
+    addEventListener:function(){},removeEventListener:function(){},
+    onvoiceschanged:null
+  };
+  function install(){
+    if(!api())return false;
+    try{
+      Object.defineProperty(window,'speechSynthesis',{value:facade,configurable:true,writable:true});
+      window.SpeechSynthesisUtterance=Utterance;
+      return true;
+    }catch(e){
+      try{window.speechSynthesis=facade;window.SpeechSynthesisUtterance=Utterance;return true;}catch(e2){return false;}
+    }
+  }
+  // The Nitron bridge may attach after DOMContentLoaded; retry briefly.
+  var tries=0;
+  (function waitBridge(){
+    if(install())return;
+    if(++tries<60)setTimeout(waitBridge,250);
+  })();
+})();</script>`;
+
 function redactSecrets(value) {
   return String(value)
     .replace(/(-{1,2}(?:storepass|keypass)(?::[a-z]+)?(?:\s+|=))(?:"[^"]*"|'[^']*'|\S+)/gi, '$1[REDACTED]')
@@ -361,19 +589,37 @@ app.post('/api/jobs', upload.array('files'), async (req, res) => {
         extractZipSafely(zipFile.path, workDir);
         promoteSingleZipRoot(workDir);
       }
-      const htmlFiles = uploadedFiles.filter(f => f.originalname.toLowerCase().endsWith('.html'));
+      // Folder uploads arrive as "MyProject/index.html", "MyProject/images/x.png".
+      // Strip the shared root folder FIRST so the HTML and its assets stay together;
+      // otherwise the entry HTML lands at the root while images/ stays nested and
+      // every relative asset URL breaks inside the APK.
+      const projectRels = uploadedFiles
+        .filter(f => !f.originalname.toLowerCase().endsWith('.zip'))
+        .map(f => safeRelativePath(f.originalname))
+        .filter(rel => rel !== 'icon.png' && rel !== 'nitron-release.keystore');
+      let commonRoot = '';
+      if (projectRels.length > 1 && projectRels.every(rel => rel.includes('/'))) {
+        const firstSeg = projectRels[0].split('/')[0];
+        if (projectRels.every(rel => rel.split('/')[0] === firstSeg)) commonRoot = firstSeg + '/';
+      }
+      const stripRoot = rel => (commonRoot && rel.startsWith(commonRoot)) ? rel.slice(commonRoot.length) : rel;
+      const htmlFiles = projectRels.filter(rel => stripRoot(rel).toLowerCase().endsWith('.html'));
       for (const file of uploadedFiles) {
         if (file.originalname.toLowerCase().endsWith('.zip')) continue;
-        const rel = safeRelativePath(file.originalname);
-        if (rel === 'icon.png' || rel === 'nitron-release.keystore') continue;
-        const finalName = htmlFiles.length === 1 && rel.toLowerCase().endsWith('.html') ? 'index.html' : rel;
+        const rawRel = safeRelativePath(file.originalname);
+        if (rawRel === 'icon.png' || rawRel === 'nitron-release.keystore') continue;
+        const rel = stripRoot(rawRel);
+        if (!rel) continue;
+        const soloProject = projectRels.length === 1;
+        const finalName = htmlFiles.length === 1 && (soloProject || !rel.includes('/')) && rel.toLowerCase().endsWith('.html') ? 'index.html' : rel;
         const targetPath = path.join(workDir, finalName);
         if (!targetPath.startsWith(workDir + path.sep)) throw new Error('Unsafe project file path');
         fs.mkdirSync(path.dirname(targetPath), { recursive: true });
         fs.copyFileSync(file.path, targetPath);
       }
+      if (commonRoot) sendLog(id, 'Project root folder "' + commonRoot.replace(/\/$/, '') + '" detected — contents promoted so relative assets resolve.');
     }
-    const iconFile = uploadedFiles.find(f => f.originalname === 'icon.png' || f.originalname.endsWith('/icon.png'));
+    const iconFile = uploadedFiles.find(f => f.originalname === 'icon.png');
     if (iconFile) {
       if (!iconFile.size || iconFile.size < 16) throw new Error('The uploaded launcher icon is empty or invalid. Re-select the image and try again.');
       fs.copyFileSync(iconFile.path, path.join(workDir, 'icon.png'));
@@ -731,7 +977,8 @@ public class PermissionPlugin extends NitronPlugin {
     const autoAddedPermissions = config._autoAddedPermissions || [];
     const autoAddedJava = `java.util.Arrays.asList(${autoAddedPermissions.map(p => JSON.stringify('android.permission.' + p)).join(',')})`;
     fs.writeFileSync(path.join(pluginDir, 'PermissionPlugin.java'), permissionPlugin.replace('__AUTO_ADDED_PERMISSION_LIST__', autoAddedJava));
-    config.plugins = [...(config.plugins || []), './plugins/PermissionPlugin.java'];
+    fs.writeFileSync(path.join(pluginDir, 'TtsPlugin.java'), FORGE_TTS_PLUGIN_JAVA);
+    config.plugins = [...(config.plugins || []), './plugins/PermissionPlugin.java', './plugins/TtsPlugin.java'];
     config.onPluginError = 'error';
     sendLog(id, 'Native plugin source registered: ./plugins/PermissionPlugin.java (onPluginError=error).');
     sendLog(id, `Plugin config: ${JSON.stringify(config.plugins)}`);
@@ -819,6 +1066,12 @@ public class PermissionPlugin extends NitronPlugin {
       window.addEventListener('pageshow',applySystemBars);
       window.ForgeAndroidPermissions={refresh:refresh,request:function(permission){var p=api();if(!p)return Promise.reject(new Error('Forge Android permission bridge is unavailable'));return p.requestRuntimePermission({permission:permission});},openSettings:function(permission){var p=api();if(!p)return Promise.reject(new Error('Forge Android permission bridge is unavailable'));return p.openPermissionSettings({permission:permission});}};
     })();</script>`;
+    if (!appHtml.includes('forge-android-tts-shim')) {
+      const ttsBodyClose = appHtml.toLowerCase().lastIndexOf('</body>');
+      if (ttsBodyClose >= 0) appHtml = appHtml.slice(0, ttsBodyClose) + FORGE_TTS_SHIM + appHtml.slice(ttsBodyClose);
+      else appHtml += FORGE_TTS_SHIM;
+      fs.writeFileSync(appEntry, appHtml);
+    }
     if (!appHtml.includes('forge-android-permission-startup')) {
       const bodyCloseIndex = appHtml.toLowerCase().lastIndexOf('</body>');
       if (bodyCloseIndex >= 0) {

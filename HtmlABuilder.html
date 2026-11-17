@@ -461,7 +461,35 @@
   const dropZone = $('dropZone');
   ['dragenter', 'dragover'].forEach(type => dropZone.addEventListener(type, event => { event.preventDefault(); dropZone.classList.add('dragover'); }));
   ['dragleave', 'drop'].forEach(type => dropZone.addEventListener(type, event => { event.preventDefault(); dropZone.classList.remove('dragover'); }));
-  dropZone.addEventListener('drop', event => { if (event.dataTransfer && event.dataTransfer.files.length) handleFiles(event.dataTransfer.files); });
+  dropZone.addEventListener('drop', async event => {
+    const dt = event.dataTransfer;
+    if (!dt) return;
+    // Folder drops: DataTransfer.files flattens directories and loses paths,
+    // which breaks every relative asset reference. Walk entries instead.
+    const entries = [];
+    if (dt.items && dt.items.length && dt.items[0].webkitGetAsEntry) {
+      for (const item of dt.items) { const entry = item.webkitGetAsEntry(); if (entry) entries.push(entry); }
+    }
+    if (entries.some(e => e.isDirectory)) {
+      const collected = [];
+      const walk = entry => new Promise(resolve => {
+        if (entry.isFile) {
+          entry.file(file => { file._relativePath = entry.fullPath.replace(/^\//, ''); collected.push(file); resolve(); }, () => resolve());
+        } else if (entry.isDirectory) {
+          const reader = entry.createReader();
+          const readBatch = () => reader.readEntries(async batch => {
+            if (!batch.length) { resolve(); return; }
+            for (const child of batch) await walk(child);
+            readBatch();
+          }, () => resolve());
+          readBatch();
+        } else resolve();
+      });
+      for (const entry of entries) await walk(entry);
+      if (collected.length) { handleFiles(collected); return; }
+    }
+    if (dt.files.length) handleFiles(dt.files);
+  });
 
   function revokeImageUrl() { if (imageObjectUrl) URL.revokeObjectURL(imageObjectUrl); imageObjectUrl = null; }
   function showIcon(dataUrl) {
