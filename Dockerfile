@@ -155,6 +155,16 @@ COPY . .
 # the build if the crop preview ever drifts from the 512px export again.
 RUN node /app/scripts/verify-icon-align.js
 
+# ── NARRATOR FIX ─────────────────────────────────────────────────────────────
+# The TTS shim must be the FIRST script in every generated app: Written Magic's
+# narrator captures `const synth = window.speechSynthesis` while parsing, and a
+# shim appended before </body> runs too late to reach that reference. This runs
+# the real shim from index.js inside a fake Android WebView (dead Chromium speech
+# stub + fake Nitron Tts plugin) and asserts a stale capture still speaks, word
+# boundaries arrive, and events never reach the wrong utterance.
+# No browser, no device, no network. See NARRATOR-FIX.md.
+RUN node /app/scripts/verify-tts-shim.js
+
 EXPOSE 3000
 
 CMD ["node", "index.js"]

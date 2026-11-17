@@ -197,30 +197,108 @@ public class TtsPlugin extends NitronPlugin {
 `;
 
 const FORGE_TTS_SHIM = `<script id="forge-android-tts-shim">(function(){
-  // Android WebView has no working Web Speech API. Install a speechSynthesis-
-  // compatible facade backed by Forge's native Tts plugin (Android TextToSpeech),
-  // with REAL word-boundary events from onRangeStart (Android 8+).
-  // v2: never early-exits; installs immediately in WebView and queues work until
-  // the Nitron plugin bridge finishes loading (it can attach late on slow devices).
+  // Forge TTS shim v3 - Android WebView has no working Web Speech API. Install a
+  // speechSynthesis-compatible facade backed by Forge's native Tts plugin
+  // (Android TextToSpeech), with REAL word-boundary events from onRangeStart.
+  //
+  // v3 fixes, on top of v2:
+  //   1. IN-PLACE HIJACK. Apps that ran before this shim and captured
+  //      \`const synth = window.speechSynthesis\` keep a reference to the dead
+  //      WebView object. Replacing window.speechSynthesis does not help them.
+  //      We therefore ALSO overwrite speak/cancel/speaking/... on that captured
+  //      object (and on SpeechSynthesis.prototype), so stale references route
+  //      into the same facade. This is what makes Written Magic's narrator work.
+  //   2. EVENT ID BUFFERING. poll() drains the Java event queue. Events that
+  //      arrive before speak() resolves its id used to be dropped (lost 'start')
+  //      or attributed to the WRONG utterance (a stale 'done' skipped a chunk).
+  //      Unknown-id events are now buffered and replayed only for the right id.
+  //   3. getVoices() reports one real system voice and fires voiceschanged, so
+  //      apps that gate narration on a non-empty voice list still start.
+  //   4. Diagnostics: window.ForgeTts + 'forge:tts-ready' / 'forge:tts-error'.
+  //
+  // This file MUST stay pure ASCII: it is injected directly after <head>, before
+  // the app's <meta charset>, so it cannot depend on the document encoding.
+  try{if(window.__forgeTtsShim>=3)return;}catch(e){}
+
   var inWebView=false;
   try{
     var ua=navigator.userAgent||'';
     inWebView=/; wv\\)/.test(ua)||(/Android/.test(ua)&&/Version\\/\\d/.test(ua))||location.hostname==='appassets.androidplatform.net';
   }catch(e){}
-  var hasNativeApi=false;
-  try{hasNativeApi=!!(window.speechSynthesis&&typeof window.speechSynthesis.speak==='function'&&typeof window.SpeechSynthesisUtterance==='function');}catch(e){}
+  var nativeSynth=null,nativeUtterance=null;
+  try{nativeSynth=window.speechSynthesis||null;nativeUtterance=window.SpeechSynthesisUtterance||null;}catch(e){}
+  var hasNativeApi=!!(nativeSynth&&typeof nativeSynth.speak==='function'&&typeof nativeUtterance==='function');
   if(!inWebView&&hasNativeApi)return; // plain browser: keep the real Web Speech API
+
   function bridge(){try{return (window.Nitron&&window.Nitron.plugins)?window.Nitron:((window.NitronRuntime&&window.NitronRuntime.plugins)?window.NitronRuntime:window.Nitron);}catch(e){return null;}}
   function api(){var b=bridge();return b&&b.plugins&&b.plugins.Tts;}
 
   var active=null,pollTimer=null,readyState=0,pendingSpeak=null,currentNativeId=-1;
+  var buffered=[],lastError=null,announced=false;
+  var lang='en-US';try{lang=navigator.language||'en-US';}catch(e){}
+  var voices=[{voiceURI:'forge-android-tts',name:'Android system voice',lang:lang,localService:true,default:true}];
+  var listeners={};
+
+  function report(message){
+    lastError=message;
+    try{console.warn('[Forge TTS]',message);}catch(e){}
+    try{window.dispatchEvent(new CustomEvent('forge:tts-error',{detail:{message:message}}));}catch(e){}
+  }
+  function announceReady(){
+    if(announced)return;announced=true;
+    try{window.dispatchEvent(new CustomEvent('forge:tts-ready',{detail:{voices:voices.length}}));}catch(e){}
+    emitVoicesChanged();
+  }
+  function emitVoicesChanged(){
+    try{if(typeof facade.onvoiceschanged==='function')facade.onvoiceschanged({type:'voiceschanged'});}catch(e){}
+    var ls=listeners['voiceschanged']||[];
+    for(var i=0;i<ls.length;i++){try{ls[i]({type:'voiceschanged'});}catch(e){}}
+  }
+
   function Utterance(text){
-    this.text=String(text||'');this.rate=1;this.pitch=1;this.volume=1;this.lang='';
+    this.text=String(text==null?'':text);this.rate=1;this.pitch=1;this.volume=1;this.lang=lang;
     this.onstart=null;this.onend=null;this.onerror=null;this.onboundary=null;
     this.onpause=null;this.onresume=null;this.onmark=null;
+    this.__listeners={};
   }
-  function fire(u,name,ev){try{if(u&&typeof u['on'+name]==='function')u['on'+name](ev);}catch(e){}}
+  Utterance.prototype.addEventListener=function(name,fn){
+    if(typeof fn!=='function')return;
+    (this.__listeners[name]=this.__listeners[name]||[]).push(fn);
+  };
+  Utterance.prototype.removeEventListener=function(name,fn){
+    var ls=this.__listeners[name];if(!ls)return;
+    var i=ls.indexOf(fn);if(i>=0)ls.splice(i,1);
+  };
+  function fire(u,name,ev){
+    if(!u)return;
+    try{ev.target=u;ev.utterance=u;}catch(e){}
+    try{if(typeof u['on'+name]==='function')u['on'+name](ev);}catch(e){}
+    var ls=(u.__listeners&&u.__listeners[name])||[];
+    for(var i=0;i<ls.length;i++){try{ls[i](ev);}catch(e){}}
+  }
   function stopPolling(){if(pollTimer){clearInterval(pollTimer);pollTimer=null;}}
+
+  // One event, only ever delivered to the utterance that owns its native id.
+  function deliver(e){
+    if(!active||!e)return;
+    if(e.type==='start'){fire(active,'start',{type:'start',charIndex:0,elapsedTime:0});}
+    else if(e.type==='range'){fire(active,'boundary',{type:'boundary',name:'word',charIndex:e.start,charLength:Math.max(0,(e.end||0)-(e.start||0)),elapsedTime:0});}
+    else if(e.type==='done'){var u=active;active=null;currentNativeId=-1;stopPolling();fire(u,'end',{type:'end',charIndex:u.text.length,elapsedTime:0});}
+    else if(e.type==='error'){var u2=active;active=null;currentNativeId=-1;stopPolling();report('Android TTS reported: '+(e.error||'synthesis-failed'));fire(u2,'error',{type:'error',error:e.error||'synthesis-failed'});}
+  }
+  function ingest(e){
+    if(!e)return;
+    // speak() has not resolved its id yet: hold the event, do not guess.
+    if(currentNativeId<0){if(buffered.length<400)buffered.push(e);return;}
+    if(e.id!==currentNativeId)return; // stale event from a flushed utterance
+    deliver(e);
+  }
+  function replayBuffered(){
+    var held=buffered;buffered=[];
+    for(var i=0;i<held.length;i++){
+      if(held[i]&&held[i].id===currentNativeId)deliver(held[i]);
+    }
+  }
   function ensurePolling(){
     if(pollTimer)return;
     pollTimer=setInterval(function(){
@@ -228,47 +306,47 @@ const FORGE_TTS_SHIM = `<script id="forge-android-tts-shim">(function(){
       var pr;try{pr=p.poll();}catch(e){return;}
       if(!pr||typeof pr.then!=='function')return;
       pr.then(function(state){
-        if(state&&state.ready)readyState=1;
-        if(state&&state.failed)readyState=-1;
+        if(state&&state.ready){readyState=1;announceReady();}
+        if(state&&state.failed&&readyState!==1){readyState=-1;report('Android text-to-speech engine is unavailable on this device. Install or enable a TTS engine (Settings > Accessibility > Text-to-speech output).');}
         if(readyState!==1&&pendingSpeak){tryInit(pendingSpeak.u,pendingSpeak.attempt+1);return;}
+        // The bridge can attach AFTER speak() was called: init() was never
+        // dispatched, so the poll loop is the only thing that can flush the job.
+        if(readyState===1&&pendingSpeak&&api()){var job=pendingSpeak;pendingSpeak=null;doSpeak(job.u);}
         var evs=(state&&state.events)||[];
-        for(var i=0;i<evs.length;i++){
-          var e=evs[i];
-          if(!active||e.id!==currentNativeId)continue;
-          if(e.type==='start'){fire(active,'start',{type:'start',charIndex:0,elapsedTime:0,utterance:active});}
-          else if(e.type==='range'){fire(active,'boundary',{type:'boundary',name:'word',charIndex:e.start,charLength:Math.max(0,(e.end||0)-(e.start||0)),elapsedTime:0,utterance:active});}
-          else if(e.type==='done'){var u=active;active=null;stopPolling();fire(u,'end',{type:'end',charIndex:u.text.length,elapsedTime:0,utterance:u});}
-          else if(e.type==='error'){var u2=active;active=null;stopPolling();fire(u2,'error',{type:'error',error:e.error||'synthesis-failed',utterance:u2});}
-        }
+        for(var i=0;i<evs.length;i++)ingest(evs[i]);
         if(!active&&!pendingSpeak)stopPolling();
       }).catch(function(){});
     },90);
   }
   function tryInit(u,attempt){
     var p=api();
-    if(attempt>200){pendingSpeak=null;fire(u,'error',{type:'error',error:'synthesis-unavailable',utterance:u});return;}
+    if(attempt>200){pendingSpeak=null;report('Forge native Tts plugin never became available. Rebuild this APK with the current Forge Studio image.');fire(u,'error',{type:'error',error:'synthesis-unavailable'});return;}
     pendingSpeak={u:u,attempt:attempt};
     ensurePolling();
     if(!p||!p.init)return; // bridge still loading; poll loop retries
     var pr;try{pr=p.init();}catch(e){return;}
     if(!pr||typeof pr.then!=='function')return;
     pr.then(function(r){
-      if(r&&r.ready){readyState=1;var job=pendingSpeak;pendingSpeak=null;if(job)doSpeak(job.u);}
-      else if(readyState===-1){var j2=pendingSpeak;pendingSpeak=null;if(j2)fire(j2.u,'error',{type:'error',error:'synthesis-unavailable',utterance:j2.u});}
+      if(r&&r.ready){readyState=1;announceReady();var job=pendingSpeak;pendingSpeak=null;if(job)doSpeak(job.u);}
+      else if(readyState===-1){var j2=pendingSpeak;pendingSpeak=null;if(j2)fire(j2.u,'error',{type:'error',error:'synthesis-unavailable'});}
     }).catch(function(){});
   }
   function doSpeak(u){
     var p=api();
     if(!p||!p.speak){tryInit(u,0);return;}
     active=u;
-    var pr;try{pr=p.speak({text:u.text,rate:String(u.rate||1),pitch:String(u.pitch||1)});}catch(e){active=null;fire(u,'error',{type:'error',error:'synthesis-failed',utterance:u});return;}
-    if(!pr||typeof pr.then!=='function'){active=null;fire(u,'error',{type:'error',error:'synthesis-failed',utterance:u});return;}
+    // Forget the previous utterance BEFORE dispatching, so its trailing events
+    // can never be delivered to this one.
+    currentNativeId=-1;buffered=[];
+    var pr;try{pr=p.speak({text:u.text,rate:String(u.rate||1),pitch:String(u.pitch||1)});}catch(e){active=null;fire(u,'error',{type:'error',error:'synthesis-failed'});return;}
+    if(!pr||typeof pr.then!=='function'){active=null;fire(u,'error',{type:'error',error:'synthesis-failed'});return;}
     pr.then(function(r){
       currentNativeId=r&&typeof r.id==='number'?r.id:-1;
+      replayBuffered();
       ensurePolling();
     }).catch(function(err){
       if(String(err&&err.message||err).indexOf('not-ready')>=0){active=null;tryInit(u,0);return;}
-      active=null;fire(u,'error',{type:'error',error:'synthesis-failed',utterance:u});
+      active=null;report('Android TTS speak() failed: '+(err&&err.message||err));fire(u,'error',{type:'error',error:'synthesis-failed'});
     });
   }
   var facade={
@@ -277,27 +355,60 @@ const FORGE_TTS_SHIM = `<script id="forge-android-tts-shim">(function(){
     get paused(){return false;},
     speak:function(u){
       if(!u||typeof u!=='object')return;
-      if(active){var old=active;active=null;fire(old,'error',{type:'error',error:'interrupted',utterance:old});}
+      if(active){var old=active;active=null;currentNativeId=-1;buffered=[];fire(old,'error',{type:'error',error:'interrupted'});}
       if(readyState===1&&api())doSpeak(u);else tryInit(u,0);
     },
     cancel:function(){
-      var old=active;active=null;pendingSpeak=null;stopPolling();
+      var old=active;active=null;pendingSpeak=null;currentNativeId=-1;buffered=[];stopPolling();
       var p=api();if(p&&p.stop){try{var pr=p.stop();if(pr&&pr.catch)pr.catch(function(){});}catch(e){}}
-      if(old)fire(old,'error',{type:'error',error:'interrupted',utterance:old});
+      if(old)fire(old,'error',{type:'error',error:'interrupted'});
     },
+    // Android TextToSpeech cannot pause mid-utterance; apps that need pause
+    // cancel and re-speak from a word offset (Written Magic does exactly that).
     pause:function(){},resume:function(){},
-    getVoices:function(){return [];},
-    addEventListener:function(){},removeEventListener:function(){},
+    getVoices:function(){return voices.slice();},
+    addEventListener:function(name,fn){if(typeof fn==='function')(listeners[name]=listeners[name]||[]).push(fn);},
+    removeEventListener:function(name,fn){var ls=listeners[name];if(!ls)return;var i=ls.indexOf(fn);if(i>=0)ls.splice(i,1);},
     onvoiceschanged:null
   };
+
+  // Route an object that an app script may already have captured into the facade.
+  function hijack(obj){
+    if(!obj||obj===facade)return false;
+    var ok=false,k;
+    var methods={speak:facade.speak,cancel:facade.cancel,pause:facade.pause,resume:facade.resume,
+                 getVoices:facade.getVoices,addEventListener:facade.addEventListener,
+                 removeEventListener:facade.removeEventListener};
+    for(k in methods){try{obj[k]=methods[k];ok=true;}catch(e){}}
+    var getters={speaking:function(){return facade.speaking;},
+                 pending:function(){return facade.pending;},
+                 paused:function(){return facade.paused;}};
+    for(k in getters){try{Object.defineProperty(obj,k,{get:getters[k],configurable:true});ok=true;}catch(e){}}
+    return ok;
+  }
   function install(){
+    var installed=false;
     try{
       Object.defineProperty(window,'speechSynthesis',{value:facade,configurable:true,writable:true});
       window.SpeechSynthesisUtterance=Utterance;
-      return true;
+      installed=true;
     }catch(e){
-      try{window.speechSynthesis=facade;window.SpeechSynthesisUtterance=Utterance;return true;}catch(e2){return false;}
+      try{window.speechSynthesis=facade;window.SpeechSynthesisUtterance=Utterance;installed=true;}catch(e2){}
     }
+    // Belt and braces: fix references captured before this shim ran.
+    hijack(nativeSynth);
+    try{if(window.SpeechSynthesis&&window.SpeechSynthesis.prototype)hijack(window.SpeechSynthesis.prototype);}catch(e){}
+    try{
+      window.ForgeTts={version:3,
+        get ready(){return readyState===1;},
+        get speaking(){return facade.speaking;},
+        get lastError(){return lastError;},
+        get nativeBridge(){return !!api();},
+        voices:voices};
+      window.__forgeTtsShim=3;
+    }catch(e){}
+    setTimeout(emitVoicesChanged,0);
+    return installed;
   }
   if(inWebView){
     install(); // support-check passes now; audio starts when the bridge loads
@@ -309,6 +420,34 @@ const FORGE_TTS_SHIM = `<script id="forge-android-tts-shim">(function(){
     })();
   }
 })();</script>`;
+
+// Forge TTS shim placement. The shim MUST be the first script in the document.
+// App code that captures `const synth = window.speechSynthesis` while parsing
+// (Written Magic's narrator does exactly this) would otherwise keep a reference
+// to WebView's dead speech object, and replacing window.speechSynthesis later
+// cannot reach it. Appending before </body> is therefore too late.
+function injectTtsShim(html) {
+  // Strip any previously injected shim (v1/v2/v3), wherever it sits.
+  const out = html.replace(/<script id="forge-android-tts-shim">[\s\S]*?<\/script>/gi, '');
+  const firstScript = out.search(/<script\b/i);
+  const headOpen = /<head\b[^>]*>/i.exec(out);
+  const bodyOpen = /<body\b[^>]*>/i.exec(out);
+  let at, anchor;
+  if (headOpen && (firstScript < 0 || headOpen.index < firstScript)) {
+    at = headOpen.index + headOpen[0].length; anchor = 'head';
+  } else if (firstScript >= 0) {
+    at = firstScript; anchor = 'first-script';
+  } else if (bodyOpen) {
+    at = bodyOpen.index + bodyOpen[0].length; anchor = 'body';
+  } else {
+    at = 0; anchor = 'document-start';
+  }
+  const injected = out.slice(0, at) + FORGE_TTS_SHIM + out.slice(at);
+  // Invariant: the shim itself is the first <script> in the finished document.
+  const first = injected.search(/<script\b/i);
+  const shimAt = injected.search(/<script id="forge-android-tts-shim">/i);
+  return { html: injected, anchor, beforeAppScripts: first === shimAt };
+}
 
 function redactSecrets(value) {
   return String(value)
@@ -1130,15 +1269,18 @@ public class PermissionPlugin extends NitronPlugin {
       window.addEventListener('pageshow',applySystemBars);
       window.ForgeAndroidPermissions={refresh:refresh,request:function(permission){var p=api();if(!p)return Promise.reject(new Error('Forge Android permission bridge is unavailable'));return p.requestRuntimePermission({permission:permission});},openSettings:function(permission){var p=api();if(!p)return Promise.reject(new Error('Forge Android permission bridge is unavailable'));return p.openPermissionSettings({permission:permission});}};
     })();</script>`;
-    // Forge TTS shim v2: always (re)install — removes any older shim first so
-    // stale early-exit versions can never survive a rebuild.
-    appHtml = appHtml.replace(/<script id="forge-android-tts-shim">[\s\S]*?<\/script>/g, '');
+    // Forge TTS shim v3: install as the FIRST script in the document. v2 appended
+    // it before </body>, which ran AFTER Written Magic's narrator had already
+    // captured `const synth = window.speechSynthesis`; the narrator then kept
+    // WebView's dead speech object and never made a sound. See NARRATOR-FIX.md.
     {
-      const ttsBodyClose = appHtml.toLowerCase().lastIndexOf('</body>');
-      if (ttsBodyClose >= 0) appHtml = appHtml.slice(0, ttsBodyClose) + FORGE_TTS_SHIM + appHtml.slice(ttsBodyClose);
-      else appHtml += FORGE_TTS_SHIM;
+      const injected = injectTtsShim(appHtml);
+      appHtml = injected.html;
       fs.writeFileSync(appEntry, appHtml);
-      sendLog(id, 'Native TTS bridge injected (shim v2): narrator uses Android TextToSpeech with word-boundary glow.');
+      if (!injected.beforeAppScripts) {
+        sendLog(id, 'WARNING: the TTS shim could not be placed ahead of every app script; relying on the in-place speechSynthesis hijack.');
+      }
+      sendLog(id, `Native TTS bridge injected (shim v3 @ ${injected.anchor}, first script: ${injected.beforeAppScripts ? 'yes' : 'no'}): narrator uses Android TextToSpeech with word-boundary glow.`);
     }
     if (!appHtml.includes('forge-android-permission-startup')) {
       const bodyCloseIndex = appHtml.toLowerCase().lastIndexOf('</body>');
@@ -1207,8 +1349,21 @@ public class PermissionPlugin extends NitronPlugin {
           } else {
             throw new Error(`Native permission plugin is missing (DEX=${dexEntry || 'missing'}, registry=${pluginManifest || 'missing'}). Use the plugin-enabled Nitron build; this APK cannot show runtime permission prompts.`);
           }
+          // Narrator regression guard: the shim must be the FIRST script in the
+          // packaged HTML, or app code captures WebView's dead speechSynthesis.
+          const htmlName = names.find(n => /^(base\/)?assets\/www\/index\.html$/.test(n));
+          if (!htmlName) {
+            sendLog(id, 'WARNING: no assets/www/index.html in the artifact; skipped narrator shim verification.');
+          } else {
+            const packedHtml = archive.getEntry(htmlName).getData().toString('utf8');
+            const firstScriptAt = packedHtml.search(/<script\b/i);
+            const shimAt = packedHtml.search(/<script id="forge-android-tts-shim">/i);
+            if (shimAt < 0) throw new Error('the packaged index.html has no Forge TTS shim, so the narrator would be silent');
+            if (shimAt !== firstScriptAt) throw new Error("the Forge TTS shim is not the first script in the packaged index.html, so app code would capture WebView's dead speechSynthesis and the narrator would be silent");
+            sendLog(id, 'Narrator verified in artifact: the TTS shim precedes every app script.');
+          }
         } catch (verifyError) {
-          error = new Error(`Permission plugin verification failed: ${verifyError.message}`);
+          error = new Error(`Build verification failed: ${verifyError.message}`);
           sendLog(id, `BUILD_ERROR: ${error.message}`);
         }
       }
